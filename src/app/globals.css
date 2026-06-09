@@ -1,0 +1,61 @@
+:root {
+    --color-bg-base: #060707;
+    --color-bg-surface: #191919;
+    --color-bg-elevated: #232524;
+    --color-overlay: rgba(255, 255, 255, 0.06);
+    --color-selected: rgba(26, 231, 132, 0.12);
+    --color-accent: #1ae784;
+    --color-accent-active: #16cc74;
+    --color-text-primary: #ffffff;
+    --color-text-secondary: rgba(255, 255, 255, 0.6);
+    --color-text-tertiary: rgba(255, 255, 255, 0.4);
+    --color-text-muted: #a0a2a1;
+    --color-on-accent: #191919;
+    --color-border: rgba(255, 255, 255, 0.1);
+    --color-border-strong: rgba(255, 255, 255, 0.2);
+    --color-border-accent: #1ae784;
+    --color-live: #e7000b;
+    --color-error: #ef4444;
+    --font-primary: "DM Sans", Arial, sans-serif;
+    --font-mono: "JetBrains Mono", Consolas, monospace;
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 10px;
+    --space-4: 12px;
+    --space-5: 16px;
+    --space-6: 24px;
+    --space-7: 32px;
+    --space-8: 40px;
+    --radius-xs: 4px;
+    --radius-sm: 6px;
+    --radius-md: 10px;
+    --radius-lg: 16px;
+    --shadow-glow-sm: 0 0 18px rgba(26, 231, 132, 0.22);
+    --shadow-modal: 0 24px 80px rgba(0, 0, 0, 0.45);
+    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --topbar-height: 60px;
+}
+
+* {
+    box-sizing: border-box;
+}
+
+html,
+body {
+    min-height: 100%;
+    margin: 0;
+    background: var(--color-bg-base);
+    color: var(--color-text-primary);
+    font-family: var(--font-primary);
+}
+
+button,
+input,
+textarea,
+select {
+    font: inherit;
+}
+
+button {
+    cursor: pointer;
+}
