@@ -29,16 +29,24 @@ type JoinForm = {
     displayName: string;
 };
 
+type EntryPanel = "join" | "create";
+
 type CopyTarget = "room" | "producer" | "host" | "viewer" | null;
 
 const initialJoinForm: JoinForm = {
     code: "",
     role: "viewer",
     pin: "",
-    displayName: "Remote"
+    displayName: "Viewer"
 };
 
 const signalTypes = ["30s", "60s", "WRAP", "STANDBY", "GO"] as const;
+
+const roleDescriptions: Record<Role, string> = {
+    producer: "Edits scripts, configures the room, and sends live signals.",
+    host: "Controls playback, scroll position, and live prompting pace.",
+    viewer: "Reads the synchronized prompt without changing shared state."
+};
 
 export function TeleprompterApp() {
     const [roomName, setRoomName] = useState("Roxom.TV Live Desk");
@@ -48,6 +56,7 @@ export function TeleprompterApp() {
     const [joinForm, setJoinForm] = useState<JoinForm>(initialJoinForm);
     const [session, setSession] = useState<Session | null>(null);
     const [createdRoom, setCreatedRoom] = useState<CreatedRoom | null>(null);
+    const [entryPanel, setEntryPanel] = useState<EntryPanel>("join");
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [copied, setCopied] = useState<CopyTarget>(null);
@@ -55,6 +64,8 @@ export function TeleprompterApp() {
     const realtimeChannelRef = useRef<ReturnType<NonNullable<ReturnType<typeof createBrowserSupabaseClient>>["channel"]> | null>(null);
     const activeRoomCode = session?.snapshot.code;
     const activeRealtimeTopic = session?.realtimeTopic;
+    const createReady = roomName.trim().length > 0 && producerPin.trim().length > 0 && hostPin.trim().length > 0 && viewerPin.trim().length > 0;
+    const joinReady = joinForm.code.trim().length > 0 && joinForm.pin.trim().length > 0 && joinForm.displayName.trim().length > 0;
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
@@ -68,7 +79,8 @@ export function TeleprompterApp() {
         setJoinForm((current) => ({
             ...current,
             code: room || current.code,
-            role: role ?? current.role
+            role: role ?? current.role,
+            displayName: role && shouldUseRoleDisplayName(current.displayName, current.role) ? roleLabel(role) : current.displayName
         }));
     }, []);
 
@@ -140,6 +152,10 @@ export function TeleprompterApp() {
     }, [activeRealtimeTopic, updateSnapshot]);
 
     const createRoom = useCallback(async () => {
+        if (!createReady) {
+            return;
+        }
+
         setBusy(true);
         setError(null);
 
@@ -172,7 +188,7 @@ export function TeleprompterApp() {
         }
 
         setBusy(false);
-    }, [hostPin, producerPin, roomName, viewerPin]);
+    }, [createReady, hostPin, producerPin, roomName, viewerPin]);
 
     const enterCreatedRoom = useCallback(() => {
         if (!createdRoom) {
@@ -190,6 +206,10 @@ export function TeleprompterApp() {
     }, [createdRoom]);
 
     const joinRoom = useCallback(async () => {
+        if (!joinReady) {
+            return;
+        }
+
         setBusy(true);
         setError(null);
 
@@ -212,7 +232,15 @@ export function TeleprompterApp() {
         }
 
         setBusy(false);
-    }, [joinForm]);
+    }, [joinForm, joinReady]);
+
+    const selectJoinRole = useCallback((role: Role) => {
+        setJoinForm((current) => ({
+            ...current,
+            role,
+            displayName: shouldUseRoleDisplayName(current.displayName, current.role) ? roleLabel(role) : current.displayName
+        }));
+    }, []);
 
     const roomPatch = useCallback(
         async (patch: MasterPatch) => {
@@ -252,80 +280,102 @@ export function TeleprompterApp() {
         return (
             <main className="shell">
                 <section className="entry">
-                    <div className="brand">
-                        <span>ROXOM.TV</span>
-                        <h1>Teleprompter</h1>
+                    <header className="entry-header">
+                        <div className="brand">
+                            <span>ROXOM.TV</span>
+                            <h1>Teleprompter</h1>
+                            <p>Create or join a remote prompting room for live production over WAN.</p>
+                        </div>
                         <Link className="manual-link" href="/manual">
                             <BookOpen size={18} /> Operation manual
                         </Link>
+                    </header>
+                    <div className="entry-switch" aria-label="Choose entry flow">
+                        <button type="button" className={entryPanel === "join" ? "active" : ""} onClick={() => setEntryPanel("join")}>
+                            <LogIn size={18} /> Join
+                        </button>
+                        <button type="button" className={entryPanel === "create" ? "active" : ""} onClick={() => setEntryPanel("create")}>
+                            <Users size={18} /> Create
+                        </button>
                     </div>
                     <div className="entry-grid">
                         <form
-                            className="panel"
-                            onSubmit={(event) => {
-                                event.preventDefault();
-                                void createRoom();
-                            }}
-                        >
-                            <h2>Create room</h2>
-                            <label>
-                                Room name
-                                <input value={roomName} onChange={(event) => setRoomName(event.target.value)} />
-                            </label>
-                            <label>
-                                Producer PIN
-                                <input type="password" value={producerPin} onChange={(event) => setProducerPin(event.target.value)} />
-                            </label>
-                            <label>
-                                Host PIN
-                                <input type="password" value={hostPin} onChange={(event) => setHostPin(event.target.value)} />
-                            </label>
-                            <label>
-                                Viewer PIN
-                                <input type="password" value={viewerPin} onChange={(event) => setViewerPin(event.target.value)} />
-                            </label>
-                            <button type="submit" className="primary" disabled={busy}>
-                                <Users size={18} /> Create
-                            </button>
-                        </form>
-                        <form
-                            className="panel"
+                            className={entryPanel === "join" ? "panel join-panel active-entry-panel" : "panel join-panel"}
                             onSubmit={(event) => {
                                 event.preventDefault();
                                 void joinRoom();
                             }}
                         >
-                            <h2>Join room</h2>
+                            <div className="panel-title">
+                                <span>Default path</span>
+                                <h2>Join a room</h2>
+                                <p>Use the room code and role PIN shared by the Producer.</p>
+                            </div>
                             <label>
                                 Room code
                                 <input
+                                    className="room-code-input"
                                     value={joinForm.code}
                                     onChange={(event) => setJoinForm({ ...joinForm, code: normalizeRoomCode(event.target.value) })}
+                                    placeholder="ABCD12"
                                     inputMode="text"
                                     autoComplete="off"
                                 />
                             </label>
-                            <div className="segmented">
-                                <button type="button" className={joinForm.role === "producer" ? "active" : ""} onClick={() => setJoinForm({ ...joinForm, role: "producer" })}>
-                                    Producer
-                                </button>
-                                <button type="button" className={joinForm.role === "host" ? "active" : ""} onClick={() => setJoinForm({ ...joinForm, role: "host" })}>
-                                    Host
-                                </button>
-                                <button type="button" className={joinForm.role === "viewer" ? "active" : ""} onClick={() => setJoinForm({ ...joinForm, role: "viewer" })}>
-                                    Viewer
-                                </button>
+                            <div className="role-picker" aria-label="Select role">
+                                {(["producer", "host", "viewer"] as const).map((role) => (
+                                    <button type="button" key={role} className={joinForm.role === role ? "active" : ""} onClick={() => selectJoinRole(role)}>
+                                        <strong>{roleLabel(role)}</strong>
+                                        <span>{roleDescriptions[role]}</span>
+                                    </button>
+                                ))}
                             </div>
                             <label>
                                 Display name
                                 <input value={joinForm.displayName} onChange={(event) => setJoinForm({ ...joinForm, displayName: event.target.value })} />
                             </label>
                             <label>
-                                PIN
+                                {roleLabel(joinForm.role)} PIN
                                 <input type="password" value={joinForm.pin} onChange={(event) => setJoinForm({ ...joinForm, pin: event.target.value })} />
                             </label>
-                            <button type="submit" className="primary" disabled={busy}>
-                                <LogIn size={18} /> Join
+                            <button type="submit" className="primary full-width" disabled={busy || !joinReady}>
+                                <LogIn size={18} /> Join room
+                            </button>
+                        </form>
+                        <form
+                            className={entryPanel === "create" ? "panel create-panel active-entry-panel" : "panel create-panel"}
+                            onSubmit={(event) => {
+                                event.preventDefault();
+                                void createRoom();
+                            }}
+                        >
+                            <div className="panel-title">
+                                <span>Producer setup</span>
+                                <h2>Create production room</h2>
+                                <p>Set access for each role before sharing links with the team.</p>
+                            </div>
+                            <label>
+                                Room name
+                                <input value={roomName} onChange={(event) => setRoomName(event.target.value)} />
+                            </label>
+                            <fieldset className="pin-fieldset">
+                                <legend>Access PINs</legend>
+                                <p>Use different PINs for Producer, Host, and Viewer access.</p>
+                                <label>
+                                    Producer PIN
+                                    <input type="password" value={producerPin} onChange={(event) => setProducerPin(event.target.value)} />
+                                </label>
+                                <label>
+                                    Host PIN
+                                    <input type="password" value={hostPin} onChange={(event) => setHostPin(event.target.value)} />
+                                </label>
+                                <label>
+                                    Viewer PIN
+                                    <input type="password" value={viewerPin} onChange={(event) => setViewerPin(event.target.value)} />
+                                </label>
+                            </fieldset>
+                            <button type="submit" className="primary full-width" disabled={busy || !createReady}>
+                                <Users size={18} /> Create room
                             </button>
                         </form>
                     </div>
@@ -399,13 +449,14 @@ function RoomReady({
             <div className="brand compact">
                 <span>ROOM READY</span>
                 <h1>{room.code}</h1>
+                <p>Share the right link and PIN for each production role.</p>
             </div>
             <div className="ready-actions">
                 <button className="primary" onClick={() => onCopy("room", room.code)}>
                     {copied === "room" ? <Check size={18} /> : <Copy size={18} />} Copy Room ID
                 </button>
                 <button onClick={() => onCopy("producer", producerLink)}>
-                    {copied === "producer" ? <Check size={18} /> : <Link2 size={18} />} Producer link
+                    {copied === "producer" ? <Check size={18} /> : <Link2 size={18} />} Producer console
                 </button>
                 <button onClick={() => onCopy("host", hostLink)}>
                     {copied === "host" ? <Check size={18} /> : <Link2 size={18} />} Host link
@@ -414,6 +465,11 @@ function RoomReady({
                     {copied === "viewer" ? <Check size={18} /> : <Link2 size={18} />} Viewer link
                 </button>
             </div>
+            <ol className="ready-checklist">
+                <li>Share the Host link with the scroll operator.</li>
+                <li>Share the Viewer link with talent and monitor devices.</li>
+                <li>Open the Producer Console and publish the script.</li>
+            </ol>
             <div className="ready-footer">
                 <button onClick={onBack}>Back</button>
                 <button className="primary" onClick={onEnter}>
@@ -854,6 +910,12 @@ function roleLabel(role: Role): string {
     }
 
     return "Viewer";
+}
+
+function shouldUseRoleDisplayName(value: string, currentRole: Role): boolean {
+    const trimmed = value.trim();
+
+    return trimmed === "" || trimmed === "Remote" || trimmed === roleLabel(currentRole);
 }
 
 function buildInviteLink(code: string, role: Role): string {
