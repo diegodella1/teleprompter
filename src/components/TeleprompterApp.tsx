@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Expand, FileUp, LogIn, Pause, Play, RotateCcw, Send, Settings, Square, Users } from "lucide-react";
+import { ArrowDown, ArrowUp, Check, Copy, Expand, FileUp, Link2, LogIn, Pause, Play, Radio, RotateCcw, Send, Settings, Square, Users } from "lucide-react";
 import { createBrowserSupabaseClient } from "@/lib/supabase-browser";
 import type { ApiResult, JoinedRoom, MasterPatch, Role, RoomConfig, RoomSnapshot, SignalType } from "@/types/teleprompter";
 import "./teleprompter.css";
@@ -14,12 +14,21 @@ type Session = {
     snapshot: RoomSnapshot;
 };
 
+type CreatedRoom = {
+    token: string;
+    clientId: string;
+    realtimeTopic: string;
+    snapshot: RoomSnapshot;
+};
+
 type JoinForm = {
     code: string;
     role: Role;
     pin: string;
     displayName: string;
 };
+
+type CopyTarget = "room" | "producer" | "host" | "viewer" | null;
 
 const initialJoinForm: JoinForm = {
     code: "",
@@ -37,12 +46,30 @@ export function TeleprompterApp() {
     const [viewerPin, setViewerPin] = useState("");
     const [joinForm, setJoinForm] = useState<JoinForm>(initialJoinForm);
     const [session, setSession] = useState<Session | null>(null);
+    const [createdRoom, setCreatedRoom] = useState<CreatedRoom | null>(null);
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
+    const [copied, setCopied] = useState<CopyTarget>(null);
     const channelRef = useRef<BroadcastChannel | null>(null);
     const realtimeChannelRef = useRef<ReturnType<NonNullable<ReturnType<typeof createBrowserSupabaseClient>>["channel"]> | null>(null);
     const activeRoomCode = session?.snapshot.code;
     const activeRealtimeTopic = session?.realtimeTopic;
+
+    useEffect(() => {
+        const params = new URLSearchParams(window.location.search);
+        const room = normalizeRoomCode(params.get("room") ?? "");
+        const role = parseRole(params.get("role"));
+
+        if (!room && !role) {
+            return;
+        }
+
+        setJoinForm((current) => ({
+            ...current,
+            code: room || current.code,
+            role: role ?? current.role
+        }));
+    }, []);
 
     const updateSnapshot = useCallback((snapshot: RoomSnapshot) => {
         setSession((current) => (current ? { ...current, snapshot } : current));
@@ -133,9 +160,8 @@ export function TeleprompterApp() {
         });
 
         if (joined.success) {
-            setSession({
+            setCreatedRoom({
                 token: joined.data.token,
-                role: "producer",
                 clientId,
                 realtimeTopic: joined.data.realtimeTopic,
                 snapshot: joined.data.snapshot
@@ -146,6 +172,21 @@ export function TeleprompterApp() {
 
         setBusy(false);
     }, [hostPin, producerPin, roomName, viewerPin]);
+
+    const enterCreatedRoom = useCallback(() => {
+        if (!createdRoom) {
+            return;
+        }
+
+        setSession({
+            token: createdRoom.token,
+            role: "producer",
+            clientId: createdRoom.clientId,
+            realtimeTopic: createdRoom.realtimeTopic,
+            snapshot: createdRoom.snapshot
+        });
+        setCreatedRoom(null);
+    }, [createdRoom]);
 
     const joinRoom = useCallback(async () => {
         setBusy(true);
@@ -192,6 +233,21 @@ export function TeleprompterApp() {
     );
 
     if (!session) {
+        if (createdRoom) {
+            return (
+                <main className="shell">
+                    <RoomReady
+                        room={createdRoom.snapshot}
+                        copied={copied}
+                        onCopy={(target, value) => void copyToClipboard(target, value, setCopied)}
+                        onEnter={enterCreatedRoom}
+                        onBack={() => setCreatedRoom(null)}
+                    />
+                    {error ? <p className="error">{error}</p> : null}
+                </main>
+            );
+        }
+
         return (
             <main className="shell">
                 <section className="entry">
@@ -200,7 +256,13 @@ export function TeleprompterApp() {
                         <h1>Teleprompter</h1>
                     </div>
                     <div className="entry-grid">
-                        <section className="panel">
+                        <form
+                            className="panel"
+                            onSubmit={(event) => {
+                                event.preventDefault();
+                                void createRoom();
+                            }}
+                        >
                             <h2>Create room</h2>
                             <label>
                                 Room name
@@ -218,24 +280,35 @@ export function TeleprompterApp() {
                                 Viewer PIN
                                 <input type="password" value={viewerPin} onChange={(event) => setViewerPin(event.target.value)} />
                             </label>
-                            <button className="primary" disabled={busy} onClick={createRoom}>
+                            <button type="submit" className="primary" disabled={busy}>
                                 <Users size={18} /> Create
                             </button>
-                        </section>
-                        <section className="panel">
+                        </form>
+                        <form
+                            className="panel"
+                            onSubmit={(event) => {
+                                event.preventDefault();
+                                void joinRoom();
+                            }}
+                        >
                             <h2>Join room</h2>
                             <label>
                                 Room code
-                                <input value={joinForm.code} onChange={(event) => setJoinForm({ ...joinForm, code: event.target.value })} />
+                                <input
+                                    value={joinForm.code}
+                                    onChange={(event) => setJoinForm({ ...joinForm, code: normalizeRoomCode(event.target.value) })}
+                                    inputMode="text"
+                                    autoComplete="off"
+                                />
                             </label>
                             <div className="segmented">
-                                <button className={joinForm.role === "producer" ? "active" : ""} onClick={() => setJoinForm({ ...joinForm, role: "producer" })}>
+                                <button type="button" className={joinForm.role === "producer" ? "active" : ""} onClick={() => setJoinForm({ ...joinForm, role: "producer" })}>
                                     Producer
                                 </button>
-                                <button className={joinForm.role === "host" ? "active" : ""} onClick={() => setJoinForm({ ...joinForm, role: "host" })}>
+                                <button type="button" className={joinForm.role === "host" ? "active" : ""} onClick={() => setJoinForm({ ...joinForm, role: "host" })}>
                                     Host
                                 </button>
-                                <button className={joinForm.role === "viewer" ? "active" : ""} onClick={() => setJoinForm({ ...joinForm, role: "viewer" })}>
+                                <button type="button" className={joinForm.role === "viewer" ? "active" : ""} onClick={() => setJoinForm({ ...joinForm, role: "viewer" })}>
                                     Viewer
                                 </button>
                             </div>
@@ -247,10 +320,10 @@ export function TeleprompterApp() {
                                 PIN
                                 <input type="password" value={joinForm.pin} onChange={(event) => setJoinForm({ ...joinForm, pin: event.target.value })} />
                             </label>
-                            <button className="primary" disabled={busy} onClick={joinRoom}>
+                            <button type="submit" className="primary" disabled={busy}>
                                 <LogIn size={18} /> Join
                             </button>
-                        </section>
+                        </form>
                     </div>
                     {error ? <p className="error">{error}</p> : null}
                 </section>
@@ -274,17 +347,73 @@ export function TeleprompterApp() {
 }
 
 function Topbar({ session, onLeave }: { session: Session; onLeave: () => void }) {
+    const [copied, setCopied] = useState<CopyTarget>(null);
+    const progress = Math.round(session.snapshot.lastState.scrollRatio * 100);
+
     return (
         <header className="topbar">
-            <div>
+            <div className="topbar-room">
                 <strong>{session.snapshot.name}</strong>
-                <span>Room {session.snapshot.code}</span>
+                <button className="room-code-button" onClick={() => void copyToClipboard("room", session.snapshot.code, setCopied)}>
+                    {copied === "room" ? <Check size={16} /> : <Copy size={16} />}
+                    <span>Room</span>
+                    <strong>{session.snapshot.code}</strong>
+                </button>
+                <span className={session.snapshot.lastState.isPlaying ? "pill live" : "pill"}>{session.snapshot.lastState.isPlaying ? "Live scrolling" : "Paused"}</span>
             </div>
             <div className="status">
-                <span>{session.role}</span>
+                <span>{roleLabel(session.role)}</span>
+                <span>{progress}%</span>
                 <button onClick={onLeave}>Leave</button>
             </div>
         </header>
+    );
+}
+
+function RoomReady({
+    room,
+    copied,
+    onCopy,
+    onEnter,
+    onBack
+}: {
+    room: RoomSnapshot;
+    copied: CopyTarget;
+    onCopy: (target: Exclude<CopyTarget, null>, value: string) => void;
+    onEnter: () => void;
+    onBack: () => void;
+}) {
+    const producerLink = buildInviteLink(room.code, "producer");
+    const hostLink = buildInviteLink(room.code, "host");
+    const viewerLink = buildInviteLink(room.code, "viewer");
+
+    return (
+        <section className="entry ready">
+            <div className="brand compact">
+                <span>ROOM READY</span>
+                <h1>{room.code}</h1>
+            </div>
+            <div className="ready-actions">
+                <button className="primary" onClick={() => onCopy("room", room.code)}>
+                    {copied === "room" ? <Check size={18} /> : <Copy size={18} />} Copy Room ID
+                </button>
+                <button onClick={() => onCopy("producer", producerLink)}>
+                    {copied === "producer" ? <Check size={18} /> : <Link2 size={18} />} Producer link
+                </button>
+                <button onClick={() => onCopy("host", hostLink)}>
+                    {copied === "host" ? <Check size={18} /> : <Link2 size={18} />} Host link
+                </button>
+                <button onClick={() => onCopy("viewer", viewerLink)}>
+                    {copied === "viewer" ? <Check size={18} /> : <Link2 size={18} />} Viewer link
+                </button>
+            </div>
+            <div className="ready-footer">
+                <button onClick={onBack}>Back</button>
+                <button className="primary" onClick={onEnter}>
+                    <Radio size={18} /> Open Producer Console
+                </button>
+            </div>
+        </section>
     );
 }
 
@@ -293,6 +422,10 @@ function ProducerView({ session, onPatch }: { session: Session; onPatch: (patch:
     const previewRef = useRef<HTMLDivElement | null>(null);
     const [draft, setDraft] = useState(snapshot.script.content);
     const [customSignal, setCustomSignal] = useState("");
+    const [copied, setCopied] = useState<CopyTarget>(null);
+    const draftChanged = draft !== snapshot.script.content;
+    const hostCount = snapshot.followers.filter((presence) => presence.role === "host").length;
+    const viewerCount = snapshot.followers.filter((presence) => presence.role === "viewer").length;
 
     useEffect(() => {
         setDraft(snapshot.script.content);
@@ -328,26 +461,44 @@ function ProducerView({ session, onPatch }: { session: Session; onPatch: (patch:
     return (
         <section className="master-layout">
             <aside className="control-rail">
-                <div className="followers">
-                    <Users size={18} />
-                    <span>{snapshot.followers.length} connected</span>
+                <div className="rail-section">
+                    <span className="section-label">Room</span>
+                    <button className="room-code-button wide" onClick={() => void copyToClipboard("room", snapshot.code, setCopied)}>
+                        {copied === "room" ? <Check size={16} /> : <Copy size={16} />}
+                        <strong>{snapshot.code}</strong>
+                    </button>
+                    <div className="share-grid">
+                        <button onClick={() => void copyToClipboard("host", buildInviteLink(snapshot.code, "host"), setCopied)}>
+                            {copied === "host" ? <Check size={16} /> : <Link2 size={16} />} Host
+                        </button>
+                        <button onClick={() => void copyToClipboard("viewer", buildInviteLink(snapshot.code, "viewer"), setCopied)}>
+                            {copied === "viewer" ? <Check size={16} /> : <Link2 size={16} />} Viewer
+                        </button>
+                    </div>
                 </div>
-                <div className="followers">
-                    <span>{snapshot.lastState.isPlaying ? "Host scrolling" : "Host paused"}</span>
+
+                <div className="rail-section">
+                    <span className="section-label">Live status</span>
+                    <div className="metric-grid">
+                        <div className="metric">
+                            <strong>{hostCount}</strong>
+                            <span>Hosts</span>
+                        </div>
+                        <div className="metric">
+                            <strong>{viewerCount}</strong>
+                            <span>Viewers</span>
+                        </div>
+                    </div>
+                    <span className={snapshot.lastState.isPlaying ? "pill live" : "pill"}>{snapshot.lastState.isPlaying ? "Host scrolling" : "Host paused"}</span>
+                    <div className="progress-track">
+                        <div style={{ width: `${Math.round(snapshot.lastState.scrollRatio * 100)}%` }} />
+                    </div>
+                    <span className="muted">Host scroll {Math.round(snapshot.lastState.scrollRatio * 100)}%</span>
                 </div>
-                <label>
-                    Speed
-                    <input type="range" min="0.5" max="8" step="0.5" value={snapshot.config.defaultSpeed} onChange={(event) => updateConfig({ defaultSpeed: Number(event.target.value) })} />
-                </label>
-                <label>
-                    Font
-                    <input type="range" min="28" max="120" value={snapshot.config.fontSize} onChange={(event) => updateConfig({ fontSize: Number(event.target.value) })} />
-                </label>
-                <label>
-                    Guide
-                    <input type="range" min="10" max="80" value={snapshot.config.guidePosition} onChange={(event) => updateConfig({ guidePosition: Number(event.target.value) })} />
-                </label>
-                <div className="signals">
+
+                <div className="rail-section signals">
+                    <span className="section-label">Signals</span>
+                    {snapshot.activeSignal ? <span className="pill live">{snapshot.activeSignal.value ?? snapshot.activeSignal.type}</span> : <span className="pill">No active signal</span>}
                     {signalTypes.map((type) => (
                         <button key={type} onClick={() => sendSignal(type, null)}>
                             <Send size={16} /> {type}
@@ -357,13 +508,32 @@ function ProducerView({ session, onPatch }: { session: Session; onPatch: (patch:
                     <button onClick={() => sendSignal("CUSTOM", customSignal)}>Send</button>
                     <button onClick={() => void onPatch({ clearSignal: true })}>Clear</button>
                 </div>
-                <div className="followers">
-                    <span>Host scroll {Math.round(snapshot.lastState.scrollRatio * 100)}%</span>
+
+                <div className="rail-section">
+                    <span className="section-label">Prompt settings</span>
+                    <label>
+                        <span className="range-label">
+                            Speed <strong>{snapshot.config.defaultSpeed.toFixed(1)}</strong>
+                        </span>
+                        <input type="range" min="0.5" max="8" step="0.5" value={snapshot.config.defaultSpeed} onChange={(event) => updateConfig({ defaultSpeed: Number(event.target.value) })} />
+                    </label>
+                    <label>
+                        <span className="range-label">
+                            Font <strong>{snapshot.config.fontSize}px</strong>
+                        </span>
+                        <input type="range" min="28" max="120" value={snapshot.config.fontSize} onChange={(event) => updateConfig({ fontSize: Number(event.target.value) })} />
+                    </label>
+                    <label>
+                        <span className="range-label">
+                            Guide <strong>{snapshot.config.guidePosition}%</strong>
+                        </span>
+                        <input type="range" min="10" max="80" value={snapshot.config.guidePosition} onChange={(event) => updateConfig({ guidePosition: Number(event.target.value) })} />
+                    </label>
                 </div>
             </aside>
             <section className="editor-panel">
                 <div className="panel-header">
-                    <span>Script editor</span>
+                    <span>{draftChanged ? "Draft changed" : "Published"}</span>
                     <label className="file-button">
                         <FileUp size={18} /> Import
                         <input type="file" accept=".txt,.md" onChange={(event) => void importFile(event.currentTarget.files?.[0], setDraft)} />
@@ -533,20 +703,22 @@ function HostView({ session, onPatch }: { session: Session; onPatch: (patch: Mas
     return (
         <section className="host-layout">
             <div className="host-tools">
-                <button className="primary" onClick={snapshot.lastState.isPlaying ? pause : play}>
+                <span className={snapshot.lastState.isPlaying ? "pill live" : "pill"}>{snapshot.lastState.isPlaying ? "Live scrolling" : "Paused"}</span>
+                <span className="pill">{Math.round(snapshot.lastState.scrollRatio * 100)}%</span>
+                <button className="primary" title="Space" onClick={snapshot.lastState.isPlaying ? pause : play}>
                     {snapshot.lastState.isPlaying ? <Pause size={18} /> : <Play size={18} />}
                     {snapshot.lastState.isPlaying ? "Pause" : "Play"}
                 </button>
-                <button onClick={jumpTop}>
+                <button title="Home" onClick={jumpTop}>
                     <RotateCcw size={18} /> Top
                 </button>
-                <button onClick={() => nudge(-1)}>
+                <button title="Arrow up" onClick={() => nudge(-1)}>
                     <ArrowUp size={18} /> Up
                 </button>
-                <button onClick={() => nudge(1)}>
+                <button title="Arrow down" onClick={() => nudge(1)}>
                     <ArrowDown size={18} /> Down
                 </button>
-                <button onClick={stop}>
+                <button title="Escape" onClick={stop}>
                     <Square size={18} /> Stop
                 </button>
             </div>
@@ -573,6 +745,10 @@ function ViewerView({ snapshot }: { snapshot: RoomSnapshot }) {
 
     return (
         <section className={mirror ? "follower mirror" : "follower"}>
+            <div className="viewer-status">
+                <span className={snapshot.activeHostClientId ? "pill live" : "pill"}>{snapshot.activeHostClientId ? "Following Host" : "Waiting for Host"}</span>
+                <span className="pill">Room {snapshot.code}</span>
+            </div>
             <div className="follower-tools">
                 <button onClick={() => setMirror((value) => !value)}>
                     <Settings size={18} /> Mirror
@@ -618,6 +794,58 @@ function PromptDisplay({
             </div>
         </section>
     );
+}
+
+function normalizeRoomCode(value: string): string {
+    return value.replace(/\s+/g, "").toUpperCase();
+}
+
+function parseRole(value: string | null): Role | null {
+    if (value === "producer" || value === "host" || value === "viewer") {
+        return value;
+    }
+
+    return null;
+}
+
+function roleLabel(role: Role): string {
+    if (role === "producer") {
+        return "Producer";
+    }
+
+    if (role === "host") {
+        return "Host";
+    }
+
+    return "Viewer";
+}
+
+function buildInviteLink(code: string, role: Role): string {
+    const url = new URL(window.location.href);
+    url.search = "";
+    url.hash = "";
+    url.searchParams.set("room", code);
+    url.searchParams.set("role", role);
+
+    return url.toString();
+}
+
+async function copyToClipboard(target: Exclude<CopyTarget, null>, value: string, setCopied: React.Dispatch<React.SetStateAction<CopyTarget>>) {
+    if (navigator.clipboard) {
+        await navigator.clipboard.writeText(value);
+    } else {
+        const input = document.createElement("textarea");
+        input.value = value;
+        input.style.position = "fixed";
+        input.style.opacity = "0";
+        document.body.appendChild(input);
+        input.select();
+        document.execCommand("copy");
+        input.remove();
+    }
+
+    setCopied(target);
+    window.setTimeout(() => setCopied(null), 1600);
 }
 
 async function postJson<TData>(url: string, body: unknown): Promise<ApiResult<TData>> {
