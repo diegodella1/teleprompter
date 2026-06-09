@@ -135,12 +135,38 @@ button,
     transition: border-color 150ms var(--ease-out), background 150ms var(--ease-out);
 }
 
+.manual-link,
+.topbar-link {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    min-height: 40px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-overlay);
+    color: var(--color-text-primary);
+    padding: 0 var(--space-4);
+    text-decoration: none;
+    transition: border-color 150ms var(--ease-out), background 150ms var(--ease-out);
+}
+
+.manual-link {
+    margin-top: var(--space-5);
+}
+
+.topbar-link {
+    min-height: 36px;
+}
+
 button {
     white-space: nowrap;
 }
 
 button:hover,
-.file-button:hover {
+.file-button:hover,
+.manual-link:hover,
+.topbar-link:hover {
     border-color: var(--color-border-strong);
     background: var(--color-selected);
 }

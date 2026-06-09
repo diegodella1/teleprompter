@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ArrowDown, ArrowUp, Check, Copy, Expand, FileUp, Link2, LogIn, Pause, Play, Radio, RotateCcw, Send, Settings, Square, Users } from "lucide-react";
+import Link from "next/link";
+import { ArrowDown, ArrowUp, BookOpen, Check, Copy, Expand, FileUp, Link2, LogIn, Pause, Play, Radio, RotateCcw, Send, Settings, Square, Users } from "lucide-react";
 import { createBrowserSupabaseClient } from "@/lib/supabase-browser";
 import type { ApiResult, JoinedRoom, MasterPatch, Role, RoomConfig, RoomSnapshot, SignalType } from "@/types/teleprompter";
 import "./teleprompter.css";
@@ -254,6 +255,9 @@ export function TeleprompterApp() {
                     <div className="brand">
                         <span>ROXOM.TV</span>
                         <h1>Teleprompter</h1>
+                        <Link className="manual-link" href="/manual">
+                            <BookOpen size={18} /> Operation manual
+                        </Link>
                     </div>
                     <div className="entry-grid">
                         <form
@@ -364,6 +368,9 @@ function Topbar({ session, onLeave }: { session: Session; onLeave: () => void })
             <div className="status">
                 <span>{roleLabel(session.role)}</span>
                 <span>{progress}%</span>
+                <Link className="topbar-link" href="/manual">
+                    Manual
+                </Link>
                 <button onClick={onLeave}>Leave</button>
             </div>
         </header>
