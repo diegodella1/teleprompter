@@ -420,9 +420,12 @@ function RoomReady({
 function ProducerView({ session, onPatch }: { session: Session; onPatch: (patch: MasterPatch) => Promise<void> }) {
     const { snapshot } = session;
     const previewRef = useRef<HTMLDivElement | null>(null);
+    const configTimerRef = useRef<number | null>(null);
+    const pendingConfigRef = useRef<Partial<RoomConfig>>({});
     const [draft, setDraft] = useState(snapshot.script.content);
     const [customSignal, setCustomSignal] = useState("");
     const [copied, setCopied] = useState<CopyTarget>(null);
+    const [configDraft, setConfigDraft] = useState(snapshot.config);
     const draftChanged = draft !== snapshot.script.content;
     const hostCount = snapshot.followers.filter((presence) => presence.role === "host").length;
     const viewerCount = snapshot.followers.filter((presence) => presence.role === "viewer").length;
@@ -430,6 +433,20 @@ function ProducerView({ session, onPatch }: { session: Session; onPatch: (patch:
     useEffect(() => {
         setDraft(snapshot.script.content);
     }, [snapshot.script.contentVersion, snapshot.script.content]);
+
+    useEffect(() => {
+        if (configTimerRef.current === null) {
+            setConfigDraft(snapshot.config);
+        }
+    }, [snapshot.config.defaultSpeed, snapshot.config.fontSize, snapshot.config.guidePosition, snapshot.config.lineHeight, snapshot.config.marginPercent, snapshot.config.theme, snapshot.config]);
+
+    useEffect(() => {
+        return () => {
+            if (configTimerRef.current !== null) {
+                window.clearTimeout(configTimerRef.current);
+            }
+        };
+    }, []);
 
     useEffect(() => {
         const node = previewRef.current;
@@ -445,7 +462,19 @@ function ProducerView({ session, onPatch }: { session: Session; onPatch: (patch:
 
     const updateConfig = useCallback(
         (config: Partial<RoomConfig>) => {
-            void onPatch({ config });
+            setConfigDraft((current) => ({ ...current, ...config }));
+            pendingConfigRef.current = { ...pendingConfigRef.current, ...config };
+
+            if (configTimerRef.current !== null) {
+                window.clearTimeout(configTimerRef.current);
+            }
+
+            configTimerRef.current = window.setTimeout(() => {
+                const nextConfig = pendingConfigRef.current;
+                pendingConfigRef.current = {};
+                configTimerRef.current = null;
+                void onPatch({ config: nextConfig });
+            }, 180);
         },
         [onPatch]
     );
@@ -513,21 +542,21 @@ function ProducerView({ session, onPatch }: { session: Session; onPatch: (patch:
                     <span className="section-label">Prompt settings</span>
                     <label>
                         <span className="range-label">
-                            Speed <strong>{snapshot.config.defaultSpeed.toFixed(1)}</strong>
+                            Speed <strong>{configDraft.defaultSpeed.toFixed(1)}</strong>
                         </span>
-                        <input type="range" min="0.5" max="8" step="0.5" value={snapshot.config.defaultSpeed} onChange={(event) => updateConfig({ defaultSpeed: Number(event.target.value) })} />
+                        <input type="range" min="0.5" max="8" step="0.5" value={configDraft.defaultSpeed} onChange={(event) => updateConfig({ defaultSpeed: Number(event.target.value) })} />
                     </label>
                     <label>
                         <span className="range-label">
-                            Font <strong>{snapshot.config.fontSize}px</strong>
+                            Font <strong>{configDraft.fontSize}px</strong>
                         </span>
-                        <input type="range" min="28" max="120" value={snapshot.config.fontSize} onChange={(event) => updateConfig({ fontSize: Number(event.target.value) })} />
+                        <input type="range" min="28" max="120" value={configDraft.fontSize} onChange={(event) => updateConfig({ fontSize: Number(event.target.value) })} />
                     </label>
                     <label>
                         <span className="range-label">
-                            Guide <strong>{snapshot.config.guidePosition}%</strong>
+                            Guide <strong>{configDraft.guidePosition}%</strong>
                         </span>
-                        <input type="range" min="10" max="80" value={snapshot.config.guidePosition} onChange={(event) => updateConfig({ guidePosition: Number(event.target.value) })} />
+                        <input type="range" min="10" max="80" value={configDraft.guidePosition} onChange={(event) => updateConfig({ guidePosition: Number(event.target.value) })} />
                     </label>
                 </div>
             </aside>
@@ -855,7 +884,7 @@ async function postJson<TData>(url: string, body: unknown): Promise<ApiResult<TD
         body: JSON.stringify(body)
     });
 
-    return (await response.json()) as ApiResult<TData>;
+    return readApiResult<TData>(response);
 }
 
 async function patchJson<TData>(url: string, body: unknown, token: string): Promise<ApiResult<TData>> {
@@ -865,7 +894,53 @@ async function patchJson<TData>(url: string, body: unknown, token: string): Prom
         body: JSON.stringify(body)
     });
 
-    return (await response.json()) as ApiResult<TData>;
+    return readApiResult<TData>(response);
+}
+
+async function readApiResult<TData>(response: Response): Promise<ApiResult<TData>> {
+    const text = await response.text();
+
+    try {
+        return normalizeApiResult<TData>(JSON.parse(text));
+    } catch {
+        return { success: false, error: `Server returned HTTP ${response.status}.` };
+    }
+}
+
+function normalizeApiResult<TData>(value: unknown): ApiResult<TData> {
+    if (isRecord(value) && value.success === true) {
+        return { success: true, data: value.data as TData };
+    }
+
+    if (isRecord(value) && value.success === false) {
+        return { success: false, error: toErrorMessage(value.error) };
+    }
+
+    return { success: false, error: "Unexpected server response." };
+}
+
+function toErrorMessage(error: unknown): string {
+    if (typeof error === "string") {
+        return error;
+    }
+
+    if (isRecord(error) && typeof error.message === "string") {
+        return error.message;
+    }
+
+    if (isRecord(error) && typeof error.error === "string") {
+        return error.error;
+    }
+
+    try {
+        return JSON.stringify(error);
+    } catch {
+        return "Unexpected error.";
+    }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === "object" && value !== null;
 }
 
 async function importFile(file: File | undefined, setDraft: (value: string) => void): Promise<void> {
