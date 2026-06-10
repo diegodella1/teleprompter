@@ -1,4 +1,5 @@
 import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "crypto";
+import { createInviteTokens, verifyInviteToken } from "@/server/invite-tokens";
 import { createServerSupabaseClient } from "@/server/supabase-server";
 import type { ClientPresence, JoinedRoom, MasterPatch, PlaybackState, RichTextSpan, Role, RoomConfig, RoomSnapshot, ScriptBlock, ScriptDocument, Signal } from "@/types/teleprompter";
 
@@ -6,12 +7,6 @@ type SessionClaims = {
     roomId: string;
     role: Role;
     clientId: string;
-};
-
-type InviteClaims = {
-    roomId: string;
-    role: Role;
-    purpose: "room-invite";
 };
 
 type RoomRow = {
@@ -665,43 +660,6 @@ function verifyToken(token: string): SessionClaims | null {
     }
 
     return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as SessionClaims;
-}
-
-function createInviteTokens(roomId: string): Record<Role, string> {
-    return {
-        producer: signInviteToken({ roomId, role: "producer", purpose: "room-invite" }),
-        host: signInviteToken({ roomId, role: "host", purpose: "room-invite" }),
-        viewer: signInviteToken({ roomId, role: "viewer", purpose: "room-invite" })
-    };
-}
-
-function signInviteToken(claims: InviteClaims): string {
-    const payload = Buffer.from(JSON.stringify(claims), "utf8").toString("base64url");
-    const signature = createHmac("sha256", getTokenSecret()).update(`invite:${payload}`).digest("base64url");
-
-    return `${payload}.${signature}`;
-}
-
-function verifyInviteToken(token: string, roomId: string, role: Role): boolean {
-    const [payload, signature] = token.split(".");
-
-    if (!payload || !signature) {
-        return false;
-    }
-
-    const expected = createHmac("sha256", getTokenSecret()).update(`invite:${payload}`).digest("base64url");
-
-    if (signature !== expected) {
-        return false;
-    }
-
-    try {
-        const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Partial<InviteClaims>;
-
-        return claims.purpose === "room-invite" && claims.roomId === roomId && claims.role === role;
-    } catch {
-        return false;
-    }
 }
 
 function getTokenSecret(): string {

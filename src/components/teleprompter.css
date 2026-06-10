@@ -793,7 +793,7 @@ button:disabled {
 }
 
 .host-layout .signal-overlay {
-    top: 116px;
+    top: 170px;
 }
 
 .follower {
@@ -987,6 +987,6 @@ button:disabled {
     }
 
     .host-layout .signal-overlay {
-        top: 220px;
+        top: 300px;
     }
 }
