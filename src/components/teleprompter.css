@@ -18,6 +18,10 @@
     width: min(760px, 100%);
 }
 
+.invite-entry {
+    width: min(760px, 100%);
+}
+
 .entry-header {
     display: flex;
     align-items: flex-start;
@@ -113,6 +117,10 @@
 .join-panel {
     border-color: var(--color-border-strong);
     box-shadow: var(--shadow-modal);
+}
+
+.invite-panel {
+    max-width: 620px;
 }
 
 .create-panel {

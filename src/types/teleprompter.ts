@@ -77,6 +77,7 @@ export type JoinedRoom = {
     snapshot: RoomSnapshot;
     token: string;
     realtimeTopic: string;
+    inviteTokens?: Record<Role, string>;
 };
 
 export type MasterPatch = {

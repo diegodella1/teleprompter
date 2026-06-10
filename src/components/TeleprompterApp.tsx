@@ -13,6 +13,7 @@ type Session = {
     clientId: string;
     realtimeTopic: string;
     snapshot: RoomSnapshot;
+    inviteTokens?: Record<Role, string>;
 };
 
 type CreatedRoom = {
@@ -20,6 +21,7 @@ type CreatedRoom = {
     clientId: string;
     realtimeTopic: string;
     snapshot: RoomSnapshot;
+    inviteTokens?: Record<Role, string>;
 };
 
 type JoinForm = {
@@ -34,6 +36,12 @@ type EntryPanel = "join" | "create";
 type CopyTarget = "room" | "producer" | "host" | "viewer" | null;
 
 type SaveStatus = "saved" | "saving" | "unsaved" | "failed";
+
+type TeleprompterAppProps = {
+    fixedRole?: Role;
+    initialRoomCode?: string;
+    inviteToken?: string;
+};
 
 type PromptLine = {
     id: string;
@@ -67,31 +75,40 @@ const roleDescriptions: Record<Role, string> = {
     viewer: "Reads the synchronized prompt without changing shared state."
 };
 
-export function TeleprompterApp() {
+export function TeleprompterApp({ fixedRole, initialRoomCode = "", inviteToken }: TeleprompterAppProps) {
     const [roomName, setRoomName] = useState("Roxom.TV Live Desk");
     const [producerPin, setProducerPin] = useState("");
     const [hostPin, setHostPin] = useState("");
     const [viewerPin, setViewerPin] = useState("");
-    const [joinForm, setJoinForm] = useState<JoinForm>(initialJoinForm);
+    const [joinForm, setJoinForm] = useState<JoinForm>(() => ({
+        code: normalizeRoomCode(initialRoomCode),
+        role: fixedRole ?? initialJoinForm.role,
+        pin: "",
+        displayName: fixedRole ? roleLabel(fixedRole) : initialJoinForm.displayName
+    }));
     const [session, setSession] = useState<Session | null>(null);
     const [createdRoom, setCreatedRoom] = useState<CreatedRoom | null>(null);
     const [entryPanel, setEntryPanel] = useState<EntryPanel>("join");
     const [error, setError] = useState<string | null>(null);
     const [busy, setBusy] = useState(false);
     const [copied, setCopied] = useState<CopyTarget>(null);
+    const [inviteRejected, setInviteRejected] = useState(false);
     const channelRef = useRef<BroadcastChannel | null>(null);
     const realtimeChannelRef = useRef<ReturnType<NonNullable<ReturnType<typeof createBrowserSupabaseClient>>["channel"]> | null>(null);
     const activeRoomCode = session?.snapshot.code;
     const activeRealtimeTopic = session?.realtimeTopic;
     const createReady = roomName.trim().length > 0 && producerPin.trim().length > 0 && hostPin.trim().length > 0 && viewerPin.trim().length > 0;
-    const joinReady = joinForm.code.trim().length > 0 && joinForm.pin.trim().length > 0 && joinForm.displayName.trim().length > 0;
+    const inviteMode = Boolean(fixedRole);
+    const hasInviteToken = Boolean(inviteToken);
+    const canUseInviteToken = hasInviteToken && !inviteRejected;
+    const joinReady = joinForm.code.trim().length > 0 && (canUseInviteToken || joinForm.pin.trim().length > 0) && joinForm.displayName.trim().length > 0;
 
     useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const room = normalizeRoomCode(params.get("room") ?? "");
         const role = parseRole(params.get("role"));
 
-        if (!room && !role) {
+        if (fixedRole || initialRoomCode || !room && !role) {
             return;
         }
 
@@ -101,7 +118,7 @@ export function TeleprompterApp() {
             role: role ?? current.role,
             displayName: role && shouldUseRoleDisplayName(current.displayName, current.role) ? roleLabel(role) : current.displayName
         }));
-    }, []);
+    }, [fixedRole, initialRoomCode]);
 
     const updateSnapshot = useCallback((snapshot: RoomSnapshot) => {
         setSession((current) => (current ? { ...current, snapshot } : current));
@@ -200,7 +217,8 @@ export function TeleprompterApp() {
                 token: joined.data.token,
                 clientId,
                 realtimeTopic: joined.data.realtimeTopic,
-                snapshot: joined.data.snapshot
+                snapshot: joined.data.snapshot,
+                inviteTokens: joined.data.inviteTokens
             });
         } else {
             setError(joined.error);
@@ -214,13 +232,14 @@ export function TeleprompterApp() {
             return;
         }
 
-        setSession({
-            token: createdRoom.token,
-            role: "producer",
-            clientId: createdRoom.clientId,
-            realtimeTopic: createdRoom.realtimeTopic,
-            snapshot: createdRoom.snapshot
-        });
+            setSession({
+                token: createdRoom.token,
+                role: "producer",
+                clientId: createdRoom.clientId,
+                realtimeTopic: createdRoom.realtimeTopic,
+                snapshot: createdRoom.snapshot,
+                inviteTokens: createdRoom.inviteTokens
+            });
         setCreatedRoom(null);
     }, [createdRoom]);
 
@@ -233,25 +252,31 @@ export function TeleprompterApp() {
         setError(null);
 
         const clientId = createClientId();
-        const result = await postJson<JoinedRoom>("/api/rooms/join", {
-            ...joinForm,
-            clientId
-        });
+        const joinPayload = {
+            code: joinForm.code,
+            role: fixedRole ?? joinForm.role,
+            displayName: joinForm.displayName,
+            clientId,
+            ...(canUseInviteToken && inviteToken ? { inviteToken } : { pin: joinForm.pin })
+        };
+        const result = await postJson<JoinedRoom>("/api/rooms/join", joinPayload);
 
         if (result.success) {
             setSession({
                 token: result.data.token,
-                role: joinForm.role,
+                role: fixedRole ?? joinForm.role,
                 clientId,
                 realtimeTopic: result.data.realtimeTopic,
-                snapshot: result.data.snapshot
+                snapshot: result.data.snapshot,
+                inviteTokens: result.data.inviteTokens
             });
         } else {
             setError(result.error);
+            setInviteRejected(Boolean(inviteToken));
         }
 
         setBusy(false);
-    }, [joinForm, joinReady]);
+    }, [canUseInviteToken, fixedRole, inviteToken, joinForm, joinReady]);
 
     const selectJoinRole = useCallback((role: Role) => {
         setJoinForm((current) => ({
@@ -287,12 +312,60 @@ export function TeleprompterApp() {
                 <main className="shell">
                     <RoomReady
                         room={createdRoom.snapshot}
+                        inviteTokens={createdRoom.inviteTokens}
                         copied={copied}
                         onCopy={(target, value) => void copyToClipboard(target, value, setCopied)}
                         onEnter={enterCreatedRoom}
                         onBack={() => setCreatedRoom(null)}
                     />
                     {error ? <p className="error">{error}</p> : null}
+                </main>
+            );
+        }
+
+        if (inviteMode && fixedRole) {
+            return (
+                <main className="shell">
+                    <section className="entry invite-entry">
+                        <header className="entry-header">
+                            <div className="brand">
+                                <span>ROXOM.TV</span>
+                                <h1>{roleInviteTitle(fixedRole)}</h1>
+                                <p>{roleInviteDescription(fixedRole)}</p>
+                            </div>
+                            <Link className="manual-link" href="/manual">
+                                <BookOpen size={18} /> Operation manual
+                            </Link>
+                        </header>
+                        <form
+                            className="panel join-panel invite-panel"
+                            onSubmit={(event) => {
+                                event.preventDefault();
+                                void joinRoom();
+                            }}
+                        >
+                            <div className="panel-title">
+                                <span>{roleLabel(fixedRole)} invite</span>
+                                <h2>Room {joinForm.code || "missing"}</h2>
+                                <p>{canUseInviteToken ? "This secure invite includes role access. Enter a display name to continue." : `Enter the ${roleLabel(fixedRole)} PIN to continue.`}</p>
+                            </div>
+                            <label>
+                                Display name
+                                <input value={joinForm.displayName} onChange={(event) => setJoinForm({ ...joinForm, displayName: event.target.value })} />
+                            </label>
+                            {!canUseInviteToken ? (
+                                <label>
+                                    {roleLabel(fixedRole)} PIN
+                                    <input type="password" value={joinForm.pin} onChange={(event) => setJoinForm({ ...joinForm, pin: event.target.value })} />
+                                </label>
+                            ) : null}
+                            <button type="submit" className="primary full-width" disabled={busy || !joinReady}>
+                                <LogIn size={18} /> Enter as {roleLabel(fixedRole)}
+                            </button>
+                            {!joinForm.code ? <p className="error">Missing room code. Ask the Producer for a new invite link.</p> : null}
+                        </form>
+                        {error ? <p className="error">{error}</p> : null}
+                    </section>
                 </main>
             );
         }
@@ -449,27 +522,29 @@ function Topbar({ session, onLeave }: { session: Session; onLeave: () => void })
 
 function RoomReady({
     room,
+    inviteTokens,
     copied,
     onCopy,
     onEnter,
     onBack
 }: {
     room: RoomSnapshot;
+    inviteTokens?: Record<Role, string>;
     copied: CopyTarget;
     onCopy: (target: Exclude<CopyTarget, null>, value: string) => void;
     onEnter: () => void;
     onBack: () => void;
 }) {
-    const producerLink = buildInviteLink(room.code, "producer");
-    const hostLink = buildInviteLink(room.code, "host");
-    const viewerLink = buildInviteLink(room.code, "viewer");
+    const producerLink = buildInviteLink(room.code, "producer", inviteTokens?.producer);
+    const hostLink = buildInviteLink(room.code, "host", inviteTokens?.host);
+    const viewerLink = buildInviteLink(room.code, "viewer", inviteTokens?.viewer);
 
     return (
         <section className="entry ready">
             <div className="brand compact">
                 <span>ROOM READY</span>
                 <h1>{room.code}</h1>
-                <p>Share the right link and PIN for each production role.</p>
+                <p>Share the right secure invite link for each production role.</p>
             </div>
             <div className="ready-actions">
                 <button className="primary" onClick={() => onCopy("room", room.code)}>
@@ -486,8 +561,8 @@ function RoomReady({
                 </button>
             </div>
             <ol className="ready-checklist">
-                <li>Share the Host link with the scroll operator.</li>
-                <li>Share the Viewer link with talent and monitor devices.</li>
+                <li>Share the Host invite with the scroll operator.</li>
+                <li>Share the Viewer invite with talent and monitor devices.</li>
                 <li>Open the Producer Console and prepare the script.</li>
             </ol>
             <div className="ready-footer">
@@ -775,10 +850,10 @@ function ProducerView({ session, onPatch }: { session: Session; onPatch: (patch:
                         <strong>{snapshot.code}</strong>
                     </button>
                     <div className="share-grid">
-                        <button onClick={() => void copyToClipboard("host", buildInviteLink(snapshot.code, "host"), setCopied)}>
+                        <button onClick={() => void copyToClipboard("host", buildInviteLink(snapshot.code, "host", session.inviteTokens?.host), setCopied)}>
                             {copied === "host" ? <Check size={16} /> : <Link2 size={16} />} Host
                         </button>
-                        <button onClick={() => void copyToClipboard("viewer", buildInviteLink(snapshot.code, "viewer"), setCopied)}>
+                        <button onClick={() => void copyToClipboard("viewer", buildInviteLink(snapshot.code, "viewer", session.inviteTokens?.viewer), setCopied)}>
                             {copied === "viewer" ? <Check size={16} /> : <Link2 size={16} />} Viewer
                         </button>
                     </div>
@@ -1367,6 +1442,30 @@ function roleLabel(role: Role): string {
     return "Viewer";
 }
 
+function roleInviteTitle(role: Role): string {
+    if (role === "producer") {
+        return "Producer Console";
+    }
+
+    if (role === "host") {
+        return "Host Console";
+    }
+
+    return "Viewer Display";
+}
+
+function roleInviteDescription(role: Role): string {
+    if (role === "producer") {
+        return "Edit the script, manage blocks, send signals, and share production links.";
+    }
+
+    if (role === "host") {
+        return "Control playback, speed, guide position, and block navigation for this room.";
+    }
+
+    return "Read the synchronized teleprompter feed for this room.";
+}
+
 function shouldUseRoleDisplayName(value: string, currentRole: Role): boolean {
     const trimmed = value.trim();
 
@@ -1389,12 +1488,18 @@ function saveStatusLabel(status: SaveStatus): string {
     return "Saved";
 }
 
-function buildInviteLink(code: string, role: Role): string {
+function buildInviteLink(code: string, role: Role, inviteToken?: string): string {
     const url = new URL(window.location.href);
+    url.pathname = inviteToken ? `/join/${role}` : "/";
     url.search = "";
     url.hash = "";
     url.searchParams.set("room", code);
-    url.searchParams.set("role", role);
+
+    if (inviteToken) {
+        url.searchParams.set("invite", inviteToken);
+    } else {
+        url.searchParams.set("role", role);
+    }
 
     return url.toString();
 }

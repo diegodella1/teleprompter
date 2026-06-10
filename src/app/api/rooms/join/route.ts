@@ -6,10 +6,11 @@ import type { ApiResult, JoinedRoom, Role } from "@/types/teleprompter";
 const joinSchema = z.object({
     code: z.string().min(4).max(12),
     role: z.enum(["producer", "host", "viewer"]),
-    pin: z.string().min(4).max(32),
+    pin: z.string().min(4).max(32).optional(),
+    inviteToken: z.string().min(16).max(1024).optional(),
     displayName: z.string().min(2).max(40),
     clientId: z.string().min(8).max(80)
-});
+}).refine((value) => value.pin || value.inviteToken, { message: "PIN or invite token is required." });
 
 export async function POST(request: Request): Promise<NextResponse<ApiResult<JoinedRoom>>> {
     try {
@@ -23,7 +24,7 @@ export async function POST(request: Request): Promise<NextResponse<ApiResult<Joi
         const joined = await joinRoom(
             parsed.data.code,
             parsed.data.role as Role,
-            parsed.data.pin,
+            { pin: parsed.data.pin, inviteToken: parsed.data.inviteToken },
             parsed.data.displayName,
             parsed.data.clientId
         );

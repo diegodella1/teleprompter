@@ -39,7 +39,7 @@ const roleManuals: readonly RoleManual[] = [
                 items: [
                     "Create a room from the landing screen with a clear production name.",
                     "Set separate PINs for Producer, Host, and Viewer access.",
-                    "Copy the room code or invite links for the Host and Viewer devices.",
+                    "Copy the secure invite links for the Producer, Host, and Viewer devices.",
                     "Join the Producer Console after the room is ready.",
                     "Confirm that the Host and Viewer counts update as remote devices connect."
                 ]
@@ -62,7 +62,7 @@ const roleManuals: readonly RoleManual[] = [
                     "The Host controls speed, font size, and guide position before air; changes are shared with connected clients.",
                     "Send 30s, 60s, WRAP, STANDBY, GO, or a custom signal when production needs a visible cue.",
                     "Clear active signals once they are no longer needed.",
-                    "If the Host loses control, share the Host invite link again or have the Host rejoin with the correct PIN."
+                    "If the Host loses control, share the Host invite link again or have the Host rejoin manually with the correct PIN."
                 ]
             }
         ]
@@ -75,8 +75,8 @@ const roleManuals: readonly RoleManual[] = [
             {
                 title: "Joining",
                 items: [
-                    "Open the Host invite link or enter the room code manually.",
-                    "Select Host, enter a recognizable display name, and submit the Host PIN.",
+                    "Open the Host invite link.",
+                    "Enter a recognizable display name; use the Host PIN only if the invite link is missing or rejected.",
                     "Wait for the script to load and verify the room code in the top bar.",
                     "Confirm with the Producer that the Host status is visible before live operation."
                 ]
@@ -151,8 +151,8 @@ const roleManuals: readonly RoleManual[] = [
             {
                 title: "Joining",
                 items: [
-                    "Open the Viewer invite link or enter the room code manually.",
-                    "Select Viewer, enter a display name, and submit the Viewer PIN.",
+                    "Open the Viewer invite link.",
+                    "Enter a display name; use the Viewer PIN only if the invite link is missing or rejected.",
                     "Wait for the script, room configuration, and latest scroll state to load.",
                     "Check that the status reads Following Host when the Host is connected."
                 ]
@@ -173,7 +173,7 @@ const roleManuals: readonly RoleManual[] = [
                     "Viewers cannot publish scripts or change shared room settings.",
                     "Viewers cannot play, pause, stop, or reposition the room for others.",
                     "Local mirror and fullscreen do not affect other participants.",
-                    "Refreshing the page requires joining again with the room code and PIN."
+                    "Refreshing the page requires opening the invite link again or joining manually with the room code and PIN."
                 ]
             }
         ]
@@ -182,7 +182,7 @@ const roleManuals: readonly RoleManual[] = [
 
 const operatingChecklist = [
     "Create the room before distributing links.",
-    "Use different PINs for each role.",
+    "Use different PINs for each role as manual fallback access.",
     "Have the Host join before sending talent to fullscreen.",
     "Confirm the Producer autosave status is Saved before live scrolling starts.",
     "Confirm Viewer devices show Following Host.",
@@ -190,7 +190,7 @@ const operatingChecklist = [
 ] as const;
 
 const failureChecklist = [
-    "If a Viewer is out of sync, refresh and rejoin with the Viewer PIN.",
+    "If a Viewer is out of sync, refresh the Viewer invite link or rejoin manually with the Viewer PIN.",
     "If the Host disconnects, pause production scroll decisions until the Host rejoins.",
     "If the wrong person joins as Host, leave the room and rejoin with the correct role.",
     "If signals remain visible too long, the Producer should press Clear.",
@@ -219,8 +219,8 @@ export default function ManualPage() {
                 </article>
                 <article>
                     <ShieldCheck size={22} />
-                    <strong>PIN-based access</strong>
-                    <span>Each role uses its own PIN. Share only the link and PIN required for that device.</span>
+                    <strong>Role-based access</strong>
+                    <span>Each role has a secure invite link, with PINs available for manual fallback.</span>
                 </article>
                 <article>
                     <Gauge size={22} />

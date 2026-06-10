@@ -8,6 +8,12 @@ type SessionClaims = {
     clientId: string;
 };
 
+type InviteClaims = {
+    roomId: string;
+    role: Role;
+    purpose: "room-invite";
+};
+
 type RoomRow = {
     id: string;
     code: string;
@@ -138,7 +144,7 @@ export async function createRoom(name: string, producerPin: string, hostPin: str
     return readSnapshot(room.id);
 }
 
-export async function joinRoom(code: string, role: Role, pin: string, displayName: string, clientId: string): Promise<JoinedRoom | null> {
+export async function joinRoom(code: string, role: Role, credentials: { pin?: string; inviteToken?: string }, displayName: string, clientId: string): Promise<JoinedRoom | null> {
     const supabase = createServerSupabaseClient();
     const room = await findRoomByCode(code);
 
@@ -147,8 +153,10 @@ export async function joinRoom(code: string, role: Role, pin: string, displayNam
     }
 
     const expectedHash = getPinHashForRole(room, role);
+    const validPin = credentials.pin ? verifyPin(credentials.pin, expectedHash) : false;
+    const validInvite = credentials.inviteToken ? verifyInviteToken(credentials.inviteToken, room.id, role) : false;
 
-    if (!verifyPin(pin, expectedHash)) {
+    if (!validPin && !validInvite) {
         return null;
     }
 
@@ -185,7 +193,8 @@ export async function joinRoom(code: string, role: Role, pin: string, displayNam
     return {
         snapshot: await readSnapshot(room.id),
         token: signToken({ roomId: room.id, role, clientId }),
-        realtimeTopic: createRealtimeTopic(room.id, room.realtime_topic_secret)
+        realtimeTopic: createRealtimeTopic(room.id, room.realtime_topic_secret),
+        inviteTokens: role === "producer" ? createInviteTokens(room.id) : undefined
     };
 }
 
@@ -656,6 +665,43 @@ function verifyToken(token: string): SessionClaims | null {
     }
 
     return JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as SessionClaims;
+}
+
+function createInviteTokens(roomId: string): Record<Role, string> {
+    return {
+        producer: signInviteToken({ roomId, role: "producer", purpose: "room-invite" }),
+        host: signInviteToken({ roomId, role: "host", purpose: "room-invite" }),
+        viewer: signInviteToken({ roomId, role: "viewer", purpose: "room-invite" })
+    };
+}
+
+function signInviteToken(claims: InviteClaims): string {
+    const payload = Buffer.from(JSON.stringify(claims), "utf8").toString("base64url");
+    const signature = createHmac("sha256", getTokenSecret()).update(`invite:${payload}`).digest("base64url");
+
+    return `${payload}.${signature}`;
+}
+
+function verifyInviteToken(token: string, roomId: string, role: Role): boolean {
+    const [payload, signature] = token.split(".");
+
+    if (!payload || !signature) {
+        return false;
+    }
+
+    const expected = createHmac("sha256", getTokenSecret()).update(`invite:${payload}`).digest("base64url");
+
+    if (signature !== expected) {
+        return false;
+    }
+
+    try {
+        const claims = JSON.parse(Buffer.from(payload, "base64url").toString("utf8")) as Partial<InviteClaims>;
+
+        return claims.purpose === "room-invite" && claims.roomId === roomId && claims.role === role;
+    } catch {
+        return false;
+    }
 }
 
 function getTokenSecret(): string {
