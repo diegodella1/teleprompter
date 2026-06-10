@@ -767,7 +767,7 @@ button:disabled {
     top: var(--space-5);
     left: 50%;
     transform: translateX(-50%);
-    z-index: 4;
+    z-index: 12;
     display: grid;
     place-items: center;
     width: min(720px, calc(100% - var(--space-8)));
@@ -782,6 +782,10 @@ button:disabled {
     text-align: center;
     overflow-wrap: anywhere;
     box-shadow: var(--shadow-glow-sm);
+}
+
+.host-layout .signal-overlay {
+    top: 116px;
 }
 
 .follower {
@@ -972,5 +976,9 @@ button:disabled {
         width: calc(100% - var(--space-6));
         min-height: 58px;
         font-size: 32px;
+    }
+
+    .host-layout .signal-overlay {
+        top: 220px;
     }
 }
