@@ -16,6 +16,9 @@
     --color-border-accent: #1ae784;
     --color-live: #e7000b;
     --color-error: #ef4444;
+    --color-warning: #ffe14a;
+    --color-blue: #00d5ff;
+    --color-violet: #ff4fd8;
     --font-primary: "DM Sans", Arial, sans-serif;
     --font-mono: "JetBrains Mono", Consolas, monospace;
     --space-1: 4px;

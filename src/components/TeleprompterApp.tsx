@@ -2,9 +2,9 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
-import { ArrowDown, ArrowUp, BookOpen, Check, Copy, Expand, FileUp, Link2, LogIn, Pause, Play, Radio, RotateCcw, Send, Settings, Square, Users } from "lucide-react";
+import { ArrowDown, ArrowUp, BookOpen, Check, Copy, Expand, FileUp, Link2, LogIn, Palette, Pause, Play, Plus, Radio, RotateCcw, Send, Settings, SkipBack, SkipForward, Square, Trash2, Users } from "lucide-react";
 import { createBrowserSupabaseClient } from "@/lib/supabase-browser";
-import type { ApiResult, JoinedRoom, MasterPatch, Role, RoomConfig, RoomSnapshot, SignalType } from "@/types/teleprompter";
+import type { ApiResult, JoinedRoom, MasterPatch, RichTextColorToken, RichTextSpan, Role, RoomConfig, RoomSnapshot, ScriptBlock, ScriptDocument, SignalType } from "@/types/teleprompter";
 import "./teleprompter.css";
 
 type Session = {
@@ -33,6 +33,16 @@ type EntryPanel = "join" | "create";
 
 type CopyTarget = "room" | "producer" | "host" | "viewer" | null;
 
+type SaveStatus = "saved" | "saving" | "unsaved" | "failed";
+
+type PromptLine = {
+    id: string;
+    spans: RichTextSpan[];
+    className: string;
+    blockId: string;
+    isHeading: boolean;
+};
+
 const initialJoinForm: JoinForm = {
     code: "",
     role: "viewer",
@@ -41,6 +51,15 @@ const initialJoinForm: JoinForm = {
 };
 
 const signalTypes = ["30s", "60s", "WRAP", "STANDBY", "GO"] as const;
+
+const colorOptions: Array<{ token: RichTextColorToken; label: string }> = [
+    { token: "default", label: "Default" },
+    { token: "accent", label: "Accent" },
+    { token: "live", label: "Live" },
+    { token: "warning", label: "Warning" },
+    { token: "blue", label: "Blue" },
+    { token: "violet", label: "Violet" }
+];
 
 const roleDescriptions: Record<Role, string> = {
     producer: "Edits scripts, configures the room, and sends live signals.",
@@ -256,6 +275,7 @@ export function TeleprompterApp() {
                 await publishRealtimeSync(result.data.snapshot);
             } else {
                 setError(result.error);
+                throw new Error(result.error);
             }
         },
         [publishLocalSync, publishRealtimeSync, session, updateSnapshot]
@@ -468,7 +488,7 @@ function RoomReady({
             <ol className="ready-checklist">
                 <li>Share the Host link with the scroll operator.</li>
                 <li>Share the Viewer link with talent and monitor devices.</li>
-                <li>Open the Producer Console and publish the script.</li>
+                <li>Open the Producer Console and prepare the script.</li>
             </ol>
             <div className="ready-footer">
                 <button onClick={onBack}>Back</button>
@@ -483,30 +503,43 @@ function RoomReady({
 function ProducerView({ session, onPatch }: { session: Session; onPatch: (patch: MasterPatch) => Promise<void> }) {
     const { snapshot } = session;
     const previewRef = useRef<HTMLDivElement | null>(null);
-    const configTimerRef = useRef<number | null>(null);
-    const pendingConfigRef = useRef<Partial<RoomConfig>>({});
-    const [draft, setDraft] = useState(snapshot.script.content);
+    const editorRefs = useRef<Record<string, HTMLDivElement | null>>({});
+    const autosaveTimerRef = useRef<number | null>(null);
+    const savingRef = useRef(false);
+    const lastSavedSignatureRef = useRef(blocksSignature(cloneBlocks(snapshot.script)));
+    const latestDraftRef = useRef<ScriptBlock[]>(cloneBlocks(snapshot.script));
+    const queuedDelayRef = useRef<number | null>(null);
+    const [blockDraft, setBlockDraft] = useState<ScriptBlock[]>(() => cloneBlocks(snapshot.script));
+    const [activeBlockId, setActiveBlockId] = useState<string | null>(snapshot.script.blocks[0]?.id ?? null);
     const [customSignal, setCustomSignal] = useState("");
     const [copied, setCopied] = useState<CopyTarget>(null);
-    const [configDraft, setConfigDraft] = useState(snapshot.config);
-    const draftChanged = draft !== snapshot.script.content;
+    const [saveStatus, setSaveStatus] = useState<SaveStatus>("saved");
     const hostCount = snapshot.followers.filter((presence) => presence.role === "host").length;
     const viewerCount = snapshot.followers.filter((presence) => presence.role === "viewer").length;
 
     useEffect(() => {
-        setDraft(snapshot.script.content);
-    }, [snapshot.script.contentVersion, snapshot.script.content]);
+        const nextBlocks = cloneBlocks(snapshot.script);
+        const nextSignature = blocksSignature(nextBlocks);
+
+        if (blocksSignature(latestDraftRef.current) !== lastSavedSignatureRef.current) {
+            return;
+        }
+
+        latestDraftRef.current = nextBlocks;
+        lastSavedSignatureRef.current = nextSignature;
+        setBlockDraft(nextBlocks);
+        setSaveStatus("saved");
+        setActiveBlockId((current) => current ?? nextBlocks[0]?.id ?? null);
+    }, [snapshot.script.contentVersion, snapshot.script]);
 
     useEffect(() => {
-        if (configTimerRef.current === null) {
-            setConfigDraft(snapshot.config);
-        }
-    }, [snapshot.config.defaultSpeed, snapshot.config.fontSize, snapshot.config.guidePosition, snapshot.config.lineHeight, snapshot.config.marginPercent, snapshot.config.theme, snapshot.config]);
+        latestDraftRef.current = blockDraft;
+    }, [blockDraft]);
 
     useEffect(() => {
         return () => {
-            if (configTimerRef.current !== null) {
-                window.clearTimeout(configTimerRef.current);
+            if (autosaveTimerRef.current !== null) {
+                window.clearTimeout(autosaveTimerRef.current);
             }
         };
     }, []);
@@ -523,25 +556,6 @@ function ProducerView({ session, onPatch }: { session: Session; onPatch: (patch:
         node.scrollTo({ top: target, behavior: Math.abs(node.scrollTop - target) > 420 ? "auto" : "smooth" });
     }, [snapshot.lastState.sequence, snapshot.lastState.scrollRatio, snapshot.lastState.scrollTop]);
 
-    const updateConfig = useCallback(
-        (config: Partial<RoomConfig>) => {
-            setConfigDraft((current) => ({ ...current, ...config }));
-            pendingConfigRef.current = { ...pendingConfigRef.current, ...config };
-
-            if (configTimerRef.current !== null) {
-                window.clearTimeout(configTimerRef.current);
-            }
-
-            configTimerRef.current = window.setTimeout(() => {
-                const nextConfig = pendingConfigRef.current;
-                pendingConfigRef.current = {};
-                configTimerRef.current = null;
-                void onPatch({ config: nextConfig });
-            }, 180);
-        },
-        [onPatch]
-    );
-
     const sendSignal = useCallback(
         (type: SignalType, value: string | null) => {
             const expiresAt = type === "30s" || type === "60s" ? new Date(Date.now() + Number.parseInt(type, 10) * 1000).toISOString() : null;
@@ -549,6 +563,207 @@ function ProducerView({ session, onPatch }: { session: Session; onPatch: (patch:
         },
         [onPatch]
     );
+
+    const saveBlocks = useCallback(async () => {
+        const blocks = latestDraftRef.current;
+        const signature = blocksSignature(blocks);
+
+        if (signature === lastSavedSignatureRef.current) {
+            setSaveStatus("saved");
+            return;
+        }
+
+        if (savingRef.current) {
+            queuedDelayRef.current = 250;
+            setSaveStatus("unsaved");
+            return;
+        }
+
+        savingRef.current = true;
+        setSaveStatus("saving");
+
+        try {
+            await onPatch({ scriptBlocks: blocks });
+
+            if (blocksSignature(latestDraftRef.current) === signature) {
+                lastSavedSignatureRef.current = signature;
+                setSaveStatus("saved");
+            } else {
+                setSaveStatus("unsaved");
+                queuedDelayRef.current = 250;
+            }
+        } catch {
+            setSaveStatus("failed");
+        } finally {
+            savingRef.current = false;
+
+            if (queuedDelayRef.current !== null) {
+                const delay = queuedDelayRef.current;
+                queuedDelayRef.current = null;
+
+                if (autosaveTimerRef.current !== null) {
+                    window.clearTimeout(autosaveTimerRef.current);
+                }
+
+                autosaveTimerRef.current = window.setTimeout(() => {
+                    autosaveTimerRef.current = null;
+                    void saveBlocks();
+                }, delay);
+            }
+        }
+    }, [onPatch]);
+
+    const scheduleAutosave = useCallback(
+        (blocks: ScriptBlock[], delay: number) => {
+            latestDraftRef.current = blocks;
+            setSaveStatus("unsaved");
+
+            if (autosaveTimerRef.current !== null) {
+                window.clearTimeout(autosaveTimerRef.current);
+            }
+
+            autosaveTimerRef.current = window.setTimeout(() => {
+                autosaveTimerRef.current = null;
+                void saveBlocks();
+            }, delay);
+        },
+        [saveBlocks]
+    );
+
+    const updateBlock = useCallback((blockId: string, patch: Partial<ScriptBlock>) => {
+        setBlockDraft((current) => {
+            const next = current.map((block) => (block.id === blockId ? { ...block, ...patch } : block));
+            scheduleAutosave(next, 250);
+
+            return next;
+        });
+    }, [scheduleAutosave]);
+
+    const addBlock = useCallback(() => {
+        const block = createEmptyBlock(blockDraft.length + 1);
+        setBlockDraft((current) => {
+            const next = [...current, block];
+            scheduleAutosave(next, 250);
+
+            return next;
+        });
+        setActiveBlockId(block.id);
+    }, [blockDraft.length, scheduleAutosave]);
+
+    const deleteBlock = useCallback((blockId: string) => {
+        setBlockDraft((current) => {
+            if (current.length === 1) {
+                return current;
+            }
+
+            const block = current.find((item) => item.id === blockId);
+            const hasContent = block ? block.title.trim().length > 0 || blockToPlainText(block).trim().length > 0 : false;
+
+            if (hasContent && !window.confirm("Delete this script block?")) {
+                return current;
+            }
+
+            const next = current.filter((item) => item.id !== blockId);
+            setActiveBlockId(next[0]?.id ?? null);
+            scheduleAutosave(next, 250);
+
+            return next;
+        });
+    }, [scheduleAutosave]);
+
+    const moveBlock = useCallback((blockId: string, direction: -1 | 1) => {
+        setBlockDraft((current) => {
+            const index = current.findIndex((block) => block.id === blockId);
+            const nextIndex = index + direction;
+
+            if (index < 0 || nextIndex < 0 || nextIndex >= current.length) {
+                return current;
+            }
+
+            const next = [...current];
+            const [block] = next.splice(index, 1);
+            next.splice(nextIndex, 0, block);
+            scheduleAutosave(next, 250);
+
+            return next;
+        });
+    }, [scheduleAutosave]);
+
+    const updateBlockText = useCallback((blockId: string, text: string) => {
+        setBlockDraft((current) => {
+            const next = current.map((block) => (block.id === blockId ? { ...block, content: createRichTextContent(text) } : block));
+            scheduleAutosave(next, 800);
+
+            return next;
+        });
+    }, [scheduleAutosave]);
+
+    const applySelectionColor = useCallback(
+        (kind: "textColor" | "backgroundColor", token: RichTextColorToken) => {
+            if (!activeBlockId) {
+                return;
+            }
+
+            const editor = editorRefs.current[activeBlockId];
+            const selection = window.getSelection();
+
+            if (!editor || !selection || selection.rangeCount === 0) {
+                return;
+            }
+
+            const range = selection.getRangeAt(0);
+
+            if (!editor.contains(range.commonAncestorContainer) || selection.toString().length === 0) {
+                return;
+            }
+
+            const beforeRange = range.cloneRange();
+            beforeRange.selectNodeContents(editor);
+            beforeRange.setEnd(range.startContainer, range.startOffset);
+            const start = beforeRange.toString().length;
+            const end = start + selection.toString().length;
+
+            let nextActiveSpans: RichTextSpan[] | null = null;
+
+            setBlockDraft((current) => {
+                const next = current.map((block) => {
+                    if (block.id !== activeBlockId) {
+                        return block;
+                    }
+
+                    nextActiveSpans = applyColorToSpans(block.content.spans, start, end, kind, token);
+
+                    return {
+                        ...block,
+                        content: {
+                            spans: nextActiveSpans
+                        }
+                    };
+                });
+                scheduleAutosave(next, 800);
+
+                return next;
+            });
+
+            if (nextActiveSpans) {
+                editor.innerHTML = spansToEditorHtml(nextActiveSpans);
+            }
+
+            selection.removeAllRanges();
+        },
+        [activeBlockId, scheduleAutosave]
+    );
+
+    const importBlocks = useCallback(async (file: File | undefined) => {
+        if (!file) {
+            return;
+        }
+
+        const blocks = createBlocksFromImportedText(await file.text());
+        setBlockDraft(blocks);
+        scheduleAutosave(blocks, 250);
+        setActiveBlockId(blocks[0]?.id ?? null);
+    }, [scheduleAutosave]);
 
     return (
         <section className="master-layout">
@@ -602,40 +817,113 @@ function ProducerView({ session, onPatch }: { session: Session; onPatch: (patch:
                 </div>
 
                 <div className="rail-section">
-                    <span className="section-label">Prompt settings</span>
-                    <label>
-                        <span className="range-label">
-                            Speed <strong>{configDraft.defaultSpeed.toFixed(1)}</strong>
-                        </span>
-                        <input type="range" min="0.5" max="8" step="0.5" value={configDraft.defaultSpeed} onChange={(event) => updateConfig({ defaultSpeed: Number(event.target.value) })} />
-                    </label>
-                    <label>
-                        <span className="range-label">
-                            Font <strong>{configDraft.fontSize}px</strong>
-                        </span>
-                        <input type="range" min="28" max="120" value={configDraft.fontSize} onChange={(event) => updateConfig({ fontSize: Number(event.target.value) })} />
-                    </label>
-                    <label>
-                        <span className="range-label">
-                            Guide <strong>{configDraft.guidePosition}%</strong>
-                        </span>
-                        <input type="range" min="10" max="80" value={configDraft.guidePosition} onChange={(event) => updateConfig({ guidePosition: Number(event.target.value) })} />
-                    </label>
+                    <span className="section-label">Script blocks</span>
+                    <button onClick={addBlock}>
+                        <Plus size={16} /> Add block
+                    </button>
+                    <span className="muted">{blockDraft.length} blocks in prompt order</span>
                 </div>
             </aside>
             <section className="editor-panel">
                 <div className="panel-header">
-                    <span>{draftChanged ? "Draft changed" : "Published"}</span>
+                    <span>{saveStatusLabel(saveStatus)}</span>
                     <label className="file-button">
                         <FileUp size={18} /> Import
-                        <input type="file" accept=".txt,.md" onChange={(event) => void importFile(event.currentTarget.files?.[0], setDraft)} />
+                        <input type="file" accept=".txt,.md" onChange={(event) => void importBlocks(event.currentTarget.files?.[0])} />
                     </label>
-                    <button className="primary" onClick={() => void onPatch({ script: draft })}>Publish</button>
                 </div>
-                <textarea value={draft} onChange={(event) => setDraft(event.target.value)} />
+                <div className="format-toolbar">
+                    <span>
+                        <Palette size={16} /> Text
+                    </span>
+                    {colorOptions.map((color) => (
+                        <button key={`text-${color.token}`} className={`swatch text-${color.token}`} title={color.label} onMouseDown={(event) => event.preventDefault()} onClick={() => applySelectionColor("textColor", color.token)} />
+                    ))}
+                    <span>Background</span>
+                    {colorOptions.map((color) => (
+                        <button key={`bg-${color.token}`} className={`swatch bg-${color.token}`} title={color.label} onMouseDown={(event) => event.preventDefault()} onClick={() => applySelectionColor("backgroundColor", color.token)} />
+                    ))}
+                </div>
+                <div className="block-editor-list">
+                    {blockDraft.map((block, index) => (
+                        <article className={block.id === activeBlockId ? "script-block active" : "script-block"} key={block.id}>
+                            <div className="block-tools">
+                                <span className="section-label">Block {index + 1}</span>
+                                <button title="Move up" disabled={index === 0} onClick={() => moveBlock(block.id, -1)}>
+                                    <ArrowUp size={16} />
+                                </button>
+                                <button title="Move down" disabled={index === blockDraft.length - 1} onClick={() => moveBlock(block.id, 1)}>
+                                    <ArrowDown size={16} />
+                                </button>
+                                <button title="Delete block" disabled={blockDraft.length === 1} onClick={() => deleteBlock(block.id)}>
+                                    <Trash2 size={16} />
+                                </button>
+                            </div>
+                            <input className="block-title-input" value={block.title} onChange={(event) => updateBlock(block.id, { title: event.target.value })} onFocus={() => setActiveBlockId(block.id)} />
+                            <RichBlockEditor
+                                block={block}
+                                setEditorRef={(node) => {
+                                    editorRefs.current[block.id] = node;
+                                }}
+                                onFocus={() => setActiveBlockId(block.id)}
+                                onTextChange={(text) => updateBlockText(block.id, text)}
+                            />
+                        </article>
+                    ))}
+                </div>
             </section>
             <PromptDisplay snapshot={snapshot} scrollRef={previewRef} mode="master" />
         </section>
+    );
+}
+
+function RichBlockEditor({
+    block,
+    setEditorRef,
+    onFocus,
+    onTextChange
+}: {
+    block: ScriptBlock;
+    setEditorRef: (node: HTMLDivElement | null) => void;
+    onFocus: () => void;
+    onTextChange: (text: string) => void;
+}) {
+    const ref = useRef<HTMLDivElement | null>(null);
+    const inputUpdateRef = useRef(false);
+
+    useEffect(() => {
+        setEditorRef(ref.current);
+
+        return () => setEditorRef(null);
+    }, [setEditorRef]);
+
+    useEffect(() => {
+        const node = ref.current;
+
+        if (!node) {
+            return;
+        }
+
+        if (inputUpdateRef.current) {
+            inputUpdateRef.current = false;
+            return;
+        }
+
+        node.innerHTML = spansToEditorHtml(block.content.spans);
+    }, [block.content.spans]);
+
+    return (
+        <div
+            className="rich-editor"
+            contentEditable
+            suppressContentEditableWarning
+            ref={ref}
+            onFocus={onFocus}
+            onInput={(event) => {
+                inputUpdateRef.current = true;
+                onTextChange(event.currentTarget.innerText);
+            }}
+        />
     );
 }
 
@@ -644,10 +932,42 @@ function HostView({ session, onPatch }: { session: Session; onPatch: (patch: Mas
     const scrollRef = useRef<HTMLDivElement | null>(null);
     const lastSentRef = useRef(0);
     const playbackIntentRef = useRef(snapshot.lastState.isPlaying);
+    const configTimerRef = useRef<number | null>(null);
+    const pendingConfigRef = useRef<Partial<RoomConfig>>({});
+    const blocks = useMemo(() => getScriptBlocks(snapshot.script), [snapshot.script]);
+    const initialBlockId = blocks[0]?.id ?? "";
+    const [activeBlockId, setActiveBlockId] = useState(initialBlockId);
+    const activeBlockIdRef = useRef(initialBlockId);
+    const [configDraft, setConfigDraft] = useState(snapshot.config);
+    const activeBlockIndex = Math.max(0, blocks.findIndex((block) => block.id === activeBlockId));
+    const activeBlock = blocks[activeBlockIndex] ?? blocks[0] ?? null;
+    const activeBlockLabel = activeBlock ? `Block ${activeBlockIndex + 1} - ${activeBlock.title}` : "No blocks";
 
     useEffect(() => {
         playbackIntentRef.current = snapshot.lastState.isPlaying;
     }, [snapshot.lastState.isPlaying]);
+
+    useEffect(() => {
+        if (!blocks.some((block) => block.id === activeBlockIdRef.current)) {
+            const nextBlockId = blocks[0]?.id ?? "";
+            activeBlockIdRef.current = nextBlockId;
+            setActiveBlockId(nextBlockId);
+        }
+    }, [blocks]);
+
+    useEffect(() => {
+        if (configTimerRef.current === null) {
+            setConfigDraft(snapshot.config);
+        }
+    }, [snapshot.config]);
+
+    useEffect(() => {
+        return () => {
+            if (configTimerRef.current !== null) {
+                window.clearTimeout(configTimerRef.current);
+            }
+        };
+    }, []);
 
     const getScrollSnapshot = useCallback(() => {
         const node = scrollRef.current;
@@ -712,6 +1032,12 @@ function HostView({ session, onPatch }: { session: Session; onPatch: (patch: Mas
         publishHostScroll({ forcePaused: true });
     }, [publishHostScroll]);
 
+    const stop = useCallback(() => {
+        playbackIntentRef.current = false;
+        const scroll = getScrollSnapshot();
+        void onPatch({ playback: { ...scroll, isPlaying: false, speed: 0 } });
+    }, [getScrollSnapshot, onPatch]);
+
     const jumpTop = useCallback(() => {
         playbackIntentRef.current = false;
 
@@ -722,6 +1048,85 @@ function HostView({ session, onPatch }: { session: Session; onPatch: (patch: Mas
         publishHostScroll({ forcePaused: true });
     }, [publishHostScroll]);
 
+    const jumpEnd = useCallback(() => {
+        playbackIntentRef.current = false;
+        const node = scrollRef.current;
+
+        if (node) {
+            node.scrollTop = Math.max(0, node.scrollHeight - node.clientHeight);
+        }
+
+        publishHostScroll({ forcePaused: true });
+    }, [publishHostScroll]);
+
+    const updateActiveBlockFromScroll = useCallback(() => {
+        const node = scrollRef.current;
+
+        if (!node) {
+            return;
+        }
+
+        const headings = Array.from(node.querySelectorAll<HTMLElement>("[data-block-heading='true']"));
+
+        if (headings.length === 0) {
+            return;
+        }
+
+        const guideOffset = node.clientHeight * (snapshot.config.guidePosition / 100);
+        const readPosition = node.scrollTop + guideOffset;
+        const activeHeading = headings.reduce((current, heading) => {
+            if (heading.offsetTop <= readPosition + 4) {
+                return heading;
+            }
+
+            return current;
+        }, headings[0]);
+        const nextBlockId = activeHeading.dataset.blockId ?? "";
+
+        if (nextBlockId && nextBlockId !== activeBlockIdRef.current) {
+            activeBlockIdRef.current = nextBlockId;
+            setActiveBlockId(nextBlockId);
+        }
+    }, [snapshot.config.guidePosition]);
+
+    const jumpToBlock = useCallback(
+        (blockId: string) => {
+            const node = scrollRef.current;
+
+            if (!node) {
+                return;
+            }
+
+            const heading = Array.from(node.querySelectorAll<HTMLElement>("[data-block-heading='true']")).find((element) => element.dataset.blockId === blockId);
+
+            if (!heading) {
+                return;
+            }
+
+            playbackIntentRef.current = false;
+            const guideOffset = node.clientHeight * (snapshot.config.guidePosition / 100);
+            node.scrollTop = Math.max(0, heading.offsetTop - guideOffset + 24);
+            activeBlockIdRef.current = blockId;
+            setActiveBlockId(blockId);
+            publishHostScroll({ forcePaused: true });
+        },
+        [publishHostScroll, snapshot.config.guidePosition]
+    );
+
+    const jumpBlock = useCallback(
+        (direction: -1 | 1) => {
+            if (blocks.length === 0) {
+                return;
+            }
+
+            const currentIndex = blocks.findIndex((block) => block.id === activeBlockIdRef.current);
+            const fallbackIndex = currentIndex === -1 ? 0 : currentIndex;
+            const nextIndex = Math.min(blocks.length - 1, Math.max(0, fallbackIndex + direction));
+            jumpToBlock(blocks[nextIndex].id);
+        },
+        [blocks, jumpToBlock]
+    );
+
     const nudge = useCallback(
         (direction: -1 | 1, distance = 120) => {
             const node = scrollRef.current;
@@ -731,14 +1136,35 @@ function HostView({ session, onPatch }: { session: Session; onPatch: (patch: Mas
             }
 
             node.scrollTop = Math.max(0, node.scrollTop + direction * distance);
+            updateActiveBlockFromScroll();
             publishHostScroll();
         },
-        [publishHostScroll]
+        [publishHostScroll, updateActiveBlockFromScroll]
     );
 
     const handleHostScroll = useCallback(() => {
+        updateActiveBlockFromScroll();
         publishHostScroll({ throttle: true });
-    }, [publishHostScroll]);
+    }, [publishHostScroll, updateActiveBlockFromScroll]);
+
+    const updateConfig = useCallback(
+        (config: Pick<Partial<RoomConfig>, "defaultSpeed" | "fontSize" | "guidePosition">) => {
+            setConfigDraft((current) => ({ ...current, ...config }));
+            pendingConfigRef.current = { ...pendingConfigRef.current, ...config };
+
+            if (configTimerRef.current !== null) {
+                window.clearTimeout(configTimerRef.current);
+            }
+
+            configTimerRef.current = window.setTimeout(() => {
+                const nextConfig = pendingConfigRef.current;
+                pendingConfigRef.current = {};
+                configTimerRef.current = null;
+                void onPatch({ config: nextConfig });
+            }, 180);
+        },
+        [onPatch]
+    );
 
     useEffect(() => {
         const handleKeyDown = (event: KeyboardEvent) => {
@@ -768,41 +1194,48 @@ function HostView({ session, onPatch }: { session: Session; onPatch: (patch: Mas
                 nudge(1);
             } else if (event.key === "PageUp") {
                 event.preventDefault();
-                nudge(-1, 360);
+                jumpBlock(-1);
             } else if (event.key === "PageDown") {
                 event.preventDefault();
-                nudge(1, 360);
+                jumpBlock(1);
             } else if (event.key === "Home") {
                 event.preventDefault();
                 jumpTop();
+            } else if (event.key === "End") {
+                event.preventDefault();
+                jumpEnd();
             } else if (event.key === "Escape") {
                 event.preventDefault();
-                pause();
+                stop();
             }
         };
 
         window.addEventListener("keydown", handleKeyDown);
 
         return () => window.removeEventListener("keydown", handleKeyDown);
-    }, [jumpTop, nudge, pause, play]);
-
-    const stop = useCallback(() => {
-        playbackIntentRef.current = false;
-        const scroll = getScrollSnapshot();
-        void onPatch({ playback: { ...scroll, isPlaying: false, speed: 0 } });
-    }, [getScrollSnapshot, onPatch]);
+    }, [jumpBlock, jumpEnd, jumpTop, nudge, pause, play, stop]);
 
     return (
         <section className="host-layout">
             <div className="host-tools">
                 <span className={snapshot.lastState.isPlaying ? "pill live" : "pill"}>{snapshot.lastState.isPlaying ? "Live scrolling" : "Paused"}</span>
                 <span className="pill">{Math.round(snapshot.lastState.scrollRatio * 100)}%</span>
+                <span className="pill block-status">{activeBlockLabel}</span>
                 <button className="primary" title="Space" onClick={snapshot.lastState.isPlaying ? pause : play}>
                     {snapshot.lastState.isPlaying ? <Pause size={18} /> : <Play size={18} />}
                     {snapshot.lastState.isPlaying ? "Pause" : "Play"}
                 </button>
+                <button title="Page Up" onClick={() => jumpBlock(-1)} disabled={blocks.length < 2 || activeBlockIndex === 0}>
+                    <SkipBack size={18} /> Prev Block
+                </button>
+                <button title="Page Down" onClick={() => jumpBlock(1)} disabled={blocks.length < 2 || activeBlockIndex >= blocks.length - 1}>
+                    <SkipForward size={18} /> Next Block
+                </button>
                 <button title="Home" onClick={jumpTop}>
                     <RotateCcw size={18} /> Top
+                </button>
+                <button title="End" onClick={jumpEnd}>
+                    <RotateCcw size={18} /> End
                 </button>
                 <button title="Arrow up" onClick={() => nudge(-1)}>
                     <ArrowUp size={18} /> Up
@@ -813,6 +1246,24 @@ function HostView({ session, onPatch }: { session: Session; onPatch: (patch: Mas
                 <button title="Escape" onClick={stop}>
                     <Square size={18} /> Stop
                 </button>
+                <label>
+                    <span className="range-label">
+                        Speed <strong>{configDraft.defaultSpeed.toFixed(1)}</strong>
+                    </span>
+                    <input type="range" min="0.5" max="8" step="0.5" value={configDraft.defaultSpeed} onChange={(event) => updateConfig({ defaultSpeed: Number(event.target.value) })} />
+                </label>
+                <label>
+                    <span className="range-label">
+                        Font <strong>{configDraft.fontSize}px</strong>
+                    </span>
+                    <input type="range" min="28" max="120" value={configDraft.fontSize} onChange={(event) => updateConfig({ fontSize: Number(event.target.value) })} />
+                </label>
+                <label>
+                    <span className="range-label">
+                        Guide <strong>{configDraft.guidePosition}%</strong>
+                    </span>
+                    <input type="range" min="10" max="80" value={configDraft.guidePosition} onChange={(event) => updateConfig({ guidePosition: Number(event.target.value) })} />
+                </label>
             </div>
             <PromptDisplay snapshot={snapshot} scrollRef={scrollRef} mode="follower" onScroll={handleHostScroll} />
         </section>
@@ -865,7 +1316,7 @@ function PromptDisplay({
     mode: "master" | "follower";
     onScroll?: React.UIEventHandler<HTMLDivElement>;
 }) {
-    const lines = useMemo(() => renderScriptLines(snapshot.script.content), [snapshot.script.content]);
+    const lines = useMemo(() => renderScriptLines(snapshot.script), [snapshot.script]);
     const style = {
         "--prompt-font-size": `${snapshot.config.fontSize}px`,
         "--prompt-line-height": snapshot.config.lineHeight,
@@ -879,8 +1330,12 @@ function PromptDisplay({
             {snapshot.activeSignal ? <div className="signal-overlay">{snapshot.activeSignal.value ?? snapshot.activeSignal.type}</div> : null}
             <div className="prompt-scroll" ref={scrollRef} onScroll={onScroll}>
                 {lines.map((line) => (
-                    <p key={line.id} className={line.className}>
-                        {line.text}
+                    <p key={line.id} className={line.className} data-block-id={line.blockId} data-block-heading={line.isHeading ? "true" : undefined}>
+                        {line.spans.map((span) => (
+                            <span className={spanClassName(span)} key={span.id}>
+                                {span.text}
+                            </span>
+                        ))}
                     </p>
                 ))}
             </div>
@@ -916,6 +1371,22 @@ function shouldUseRoleDisplayName(value: string, currentRole: Role): boolean {
     const trimmed = value.trim();
 
     return trimmed === "" || trimmed === "Remote" || trimmed === roleLabel(currentRole);
+}
+
+function saveStatusLabel(status: SaveStatus): string {
+    if (status === "saving") {
+        return "Saving...";
+    }
+
+    if (status === "unsaved") {
+        return "Unsaved changes";
+    }
+
+    if (status === "failed") {
+        return "Save failed";
+    }
+
+    return "Saved";
 }
 
 function buildInviteLink(code: string, role: Role): string {
@@ -1012,39 +1483,187 @@ function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === "object" && value !== null;
 }
 
-async function importFile(file: File | undefined, setDraft: (value: string) => void): Promise<void> {
-    if (!file) {
-        return;
-    }
-
-    setDraft(await file.text());
-}
-
 function createClientId(): string {
     return crypto.randomUUID();
 }
 
-function renderScriptLines(content: string): Array<{ id: string; text: string; className: string }> {
-    return content.split("\n").map((rawLine, index) => {
-        const line = rawLine.trim();
-        const id = `${index}-${line}`;
+function getScriptBlocks(script: ScriptDocument): ScriptBlock[] {
+    return script.blocks.length > 0 ? script.blocks : createBlocksFromImportedText(script.content);
+}
 
-        if (line === "---") {
-            return { id, text: "", className: "divider" };
-        }
+function renderScriptLines(script: ScriptDocument): PromptLine[] {
+    const blocks = getScriptBlocks(script);
 
-        if (line === "[PAUSA]") {
-            return { id, text: "PAUSA", className: "pause-marker" };
-        }
+    return blocks.flatMap((block, blockIndex) => {
+        const heading: PromptLine[] = [
+            {
+                id: `${block.id}-heading`,
+                spans: [{ id: `${block.id}-heading-text`, text: block.title }],
+                className: "block-heading",
+                blockId: block.id,
+                isHeading: true
+            }
+        ];
+        const body = splitSpansIntoLines(block.content.spans).map((spans, lineIndex) => createPromptLine(`${block.id}-${blockIndex}-${lineIndex}`, spans, block.id));
 
-        if (line.startsWith("[VTR:")) {
-            return { id, text: line.replace("[VTR:", "").replace("]", "").trim(), className: "cue" };
-        }
-
-        if (line.startsWith("(") && line.endsWith(")")) {
-            return { id, text: line, className: "note" };
-        }
-
-        return { id, text: line.replaceAll("**", ""), className: line.startsWith("**") ? "bold" : "copy" };
+        return [...heading, ...body];
     });
+}
+
+function createPromptLine(id: string, spans: RichTextSpan[], blockId: string): PromptLine {
+    const text = spans.map((span) => span.text).join("").trim();
+
+    if (text === "---") {
+        return { id, spans: [{ id: `${id}-divider`, text: "" }], className: "divider", blockId, isHeading: false };
+    }
+
+    if (text === "[PAUSA]") {
+        return { id, spans: [{ id: `${id}-pause`, text: "PAUSA" }], className: "pause-marker", blockId, isHeading: false };
+    }
+
+    if (text.startsWith("[VTR:")) {
+        return { id, spans: [{ id: `${id}-cue`, text: text.replace("[VTR:", "").replace("]", "").trim() }], className: "cue", blockId, isHeading: false };
+    }
+
+    if (text.startsWith("(") && text.endsWith(")")) {
+        return { id, spans, className: "note", blockId, isHeading: false };
+    }
+
+    return { id, spans: stripBoldMarkers(spans), className: text.startsWith("**") ? "bold" : "copy", blockId, isHeading: false };
+}
+
+function splitSpansIntoLines(spans: RichTextSpan[]): RichTextSpan[][] {
+    const lines: RichTextSpan[][] = [[]];
+
+    spans.forEach((span) => {
+        const parts = span.text.split("\n");
+        parts.forEach((part, index) => {
+            if (index > 0) {
+                lines.push([]);
+            }
+
+            lines[lines.length - 1].push({ ...span, id: `${span.id}-${index}-${lines.length}`, text: part });
+        });
+    });
+
+    return lines;
+}
+
+function stripBoldMarkers(spans: RichTextSpan[]): RichTextSpan[] {
+    return spans.map((span) => ({ ...span, text: span.text.replaceAll("**", "") }));
+}
+
+function spanClassName(span: RichTextSpan): string {
+    return ["rich-span", span.textColor ? `text-${span.textColor}` : "", span.backgroundColor ? `bg-${span.backgroundColor}` : ""].filter(Boolean).join(" ");
+}
+
+function spansToEditorHtml(spans: RichTextSpan[]): string {
+    return spans
+        .map((span) => `<span class="${spanClassName(span)}">${escapeHtml(span.text)}</span>`)
+        .join("");
+}
+
+function escapeHtml(value: string): string {
+    return value
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;")
+        .replaceAll("\n", "<br>");
+}
+
+function createRichTextContent(text: string): ScriptBlock["content"] {
+    return {
+        spans: [
+            {
+                id: createClientId(),
+                text
+            }
+        ]
+    };
+}
+
+function createEmptyBlock(index: number): ScriptBlock {
+    return {
+        id: createClientId(),
+        title: `Block ${index}`,
+        content: createRichTextContent("")
+    };
+}
+
+function createBlocksFromImportedText(text: string): ScriptBlock[] {
+    const sections = text
+        .split(/\n-{3,}\n/g)
+        .map((section) => section.trim())
+        .filter(Boolean);
+    const source = sections.length > 0 ? sections : [text];
+
+    return source.map((section, index) => ({
+        id: createClientId(),
+        title: source.length === 1 ? "Script" : `Block ${index + 1}`,
+        content: createRichTextContent(section)
+    }));
+}
+
+function cloneBlocks(script: ScriptDocument): ScriptBlock[] {
+    const blocks = script.blocks.length > 0 ? script.blocks : createBlocksFromImportedText(script.content);
+
+    return blocks.map((block) => ({
+        id: block.id,
+        title: block.title,
+        content: {
+            spans: block.content.spans.map((span) => ({ ...span }))
+        }
+    }));
+}
+
+function blocksSignature(blocks: ScriptBlock[]): string {
+    return JSON.stringify(blocks);
+}
+
+function blockToPlainText(block: ScriptBlock): string {
+    return block.content.spans.map((span) => span.text).join("");
+}
+
+function applyColorToSpans(spans: RichTextSpan[], start: number, end: number, kind: "textColor" | "backgroundColor", token: RichTextColorToken): RichTextSpan[] {
+    let cursor = 0;
+    const next: RichTextSpan[] = [];
+
+    spans.forEach((span) => {
+        const spanStart = cursor;
+        const spanEnd = cursor + span.text.length;
+        cursor = spanEnd;
+
+        if (spanEnd <= start || spanStart >= end) {
+            next.push(span);
+            return;
+        }
+
+        const before = span.text.slice(0, Math.max(0, start - spanStart));
+        const selected = span.text.slice(Math.max(0, start - spanStart), Math.min(span.text.length, end - spanStart));
+        const after = span.text.slice(Math.min(span.text.length, end - spanStart));
+
+        if (before) {
+            next.push({ ...span, id: createClientId(), text: before });
+        }
+
+        if (selected) {
+            const styled = { ...span, id: createClientId(), text: selected };
+
+            if (token === "default") {
+                delete styled[kind];
+            } else {
+                styled[kind] = token;
+            }
+
+            next.push(styled);
+        }
+
+        if (after) {
+            next.push({ ...span, id: createClientId(), text: after });
+        }
+    });
+
+    return next;
 }

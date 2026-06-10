@@ -2,6 +2,8 @@ import process from "node:process";
 
 const baseUrl = process.env.SMOKE_BASE_URL ?? "http://localhost:3000";
 const suffix = Date.now().toString(36);
+const blockAId = crypto.randomUUID();
+const blockBId = crypto.randomUUID();
 
 const room = await post("/api/rooms", {
     name: `Smoke ${suffix}`,
@@ -82,15 +84,60 @@ await patch(code, host.token, { playback: { isPlaying: false, speed: 0, scrollTo
     assert(snapshot.lastState.speed === 0, "stop sets speed 0");
 });
 
-await patch(code, producer.token, { config: { fontSize: 72, guidePosition: 40, defaultSpeed: 3 } }, (snapshot) => {
+await expectPatchReject(code, producer.token, { config: { fontSize: 72, guidePosition: 40, defaultSpeed: 3 } });
+
+await patch(code, host.token, { config: { fontSize: 72, guidePosition: 40, defaultSpeed: 3 } }, (snapshot) => {
     assert(snapshot.config.fontSize === 72, "config updates font size");
     assert(snapshot.config.guidePosition === 40, "config updates guide position");
     assert(snapshot.config.defaultSpeed === 3, "config updates default speed");
 });
 
-await patch(code, producer.token, { script: "**UPDATED SCRIPT**\n\n[VTR: chart]" }, (snapshot) => {
-    assert(snapshot.script.content.includes("UPDATED SCRIPT"), "script updates content");
+await patch(code, producer.token, {
+    scriptBlocks: [
+        {
+            id: blockAId,
+            title: "Block A",
+            content: {
+                spans: [
+                    { id: `span-a-${suffix}`, text: "First block ", textColor: "accent" },
+                    { id: `span-b-${suffix}`, text: "highlight", backgroundColor: "warning" }
+                ]
+            }
+        },
+        {
+            id: blockBId,
+            title: "Block B",
+            content: {
+                spans: [{ id: `span-c-${suffix}`, text: "[VTR: chart]" }]
+            }
+        }
+    ]
+}, (snapshot) => {
+    assert(snapshot.script.blocks.length === 2, "script stores two blocks");
+    assert(snapshot.script.blocks[0].title === "Block A", "script keeps block order");
+    assert(snapshot.script.blocks[0].content.spans[0].textColor === "accent", "script stores text color");
+    assert(snapshot.script.blocks[0].content.spans[1].backgroundColor === "warning", "script stores background color");
     assert(snapshot.script.contentVersion > 1, "script increments version");
+});
+
+await patch(code, producer.token, {
+    scriptBlocks: [
+        {
+            id: blockBId,
+            title: "Block B",
+            content: {
+                spans: [{ id: `span-c-${suffix}`, text: "[VTR: chart]" }]
+            }
+        }
+    ]
+}, (snapshot) => {
+    assert(snapshot.script.blocks.length === 1, "missing block is deleted on publish");
+    assert(snapshot.script.blocks[0].title === "Block B", "reordered remaining block is first");
+});
+
+await patch(code, producer.token, { script: "**UPDATED SCRIPT**\n\n[VTR: chart]" }, (snapshot) => {
+    assert(snapshot.script.content.includes("UPDATED SCRIPT"), "legacy script import updates content");
+    assert(snapshot.script.blocks.length === 1, "legacy script import creates block");
 });
 
 await patch(code, producer.token, { signal: { type: "GO", value: null, expiresAt: null } }, (snapshot) => {

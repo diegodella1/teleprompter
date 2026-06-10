@@ -2,6 +2,23 @@ export type Role = "producer" | "host" | "viewer";
 
 export type SignalType = "30s" | "60s" | "WRAP" | "STANDBY" | "GO" | "CUSTOM";
 
+export type RichTextColorToken = "default" | "accent" | "live" | "warning" | "blue" | "violet";
+
+export type RichTextSpan = {
+    id: string;
+    text: string;
+    textColor?: RichTextColorToken;
+    backgroundColor?: RichTextColorToken;
+};
+
+export type ScriptBlock = {
+    id: string;
+    title: string;
+    content: {
+        spans: RichTextSpan[];
+    };
+};
+
 export type PlaybackState = {
     isPlaying: boolean;
     scrollTop: number;
@@ -23,9 +40,10 @@ export type RoomConfig = {
 
 export type ScriptDocument = {
     content: string;
-    format: "text" | "markdown";
+    format: "text" | "markdown" | "blocks-v1";
     updatedAt: string;
     contentVersion: number;
+    blocks: ScriptBlock[];
 };
 
 export type Signal = {
@@ -63,6 +81,7 @@ export type JoinedRoom = {
 
 export type MasterPatch = {
     script?: string;
+    scriptBlocks?: ScriptBlock[];
     config?: Partial<RoomConfig>;
     playback?: Partial<Pick<PlaybackState, "isPlaying" | "scrollTop" | "scrollRatio" | "speed">>;
     signal?: Pick<Signal, "type" | "value" | "expiresAt"> | null;

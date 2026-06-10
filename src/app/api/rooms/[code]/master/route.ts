@@ -3,8 +3,26 @@ import { z } from "zod";
 import { applyMasterPatch } from "@/server/room-store";
 import type { ApiResult, JoinedRoom } from "@/types/teleprompter";
 
+const colorTokenSchema = z.enum(["default", "accent", "live", "warning", "blue", "violet"]);
+
+const richTextSpanSchema = z.object({
+    id: z.string().min(1).max(80),
+    text: z.string().max(12000),
+    textColor: colorTokenSchema.optional(),
+    backgroundColor: colorTokenSchema.optional()
+});
+
+const scriptBlockSchema = z.object({
+    id: z.string().uuid(),
+    title: z.string().min(1).max(120),
+    content: z.object({
+        spans: z.array(richTextSpanSchema).min(1).max(400)
+    })
+});
+
 const patchSchema = z.object({
     script: z.string().optional(),
+    scriptBlocks: z.array(scriptBlockSchema).min(1).max(80).optional(),
     config: z
         .object({
             fontSize: z.number().min(28).max(120).optional(),

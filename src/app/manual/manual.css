@@ -194,6 +194,53 @@
     font-size: 18px;
 }
 
+.shortcut-grid {
+    display: grid;
+    grid-template-columns: minmax(120px, 0.8fr) minmax(140px, 1fr) minmax(220px, 1.8fr);
+    gap: 1px;
+    overflow: hidden;
+    margin-top: var(--space-4);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-border);
+}
+
+.shortcut-grid > * {
+    min-width: 0;
+    background: var(--color-bg-base);
+    padding: var(--space-3);
+}
+
+.shortcut-grid-header {
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    text-transform: uppercase;
+}
+
+.shortcut-grid strong {
+    color: var(--color-text-primary);
+}
+
+.shortcut-grid span {
+    color: var(--color-text-secondary);
+    line-height: 1.45;
+}
+
+.shortcut-grid kbd {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    border: 1px solid var(--color-border-strong);
+    border-radius: var(--radius-xs);
+    background: var(--color-overlay);
+    color: var(--color-accent);
+    padding: 0 var(--space-2);
+    font-family: var(--font-mono);
+    font-size: 12px;
+    white-space: nowrap;
+}
+
 @media (max-width: 980px) {
     .manual-summary,
     .checklist-grid,
@@ -213,5 +260,13 @@
 
     .role-heading {
         display: grid;
+    }
+
+    .shortcut-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .shortcut-grid-header {
+        display: none;
     }
 }

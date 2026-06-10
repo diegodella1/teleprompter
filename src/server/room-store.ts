@@ -1,6 +1,6 @@
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "crypto";
+import { createHash, createHmac, randomBytes, randomUUID, timingSafeEqual } from "crypto";
 import { createServerSupabaseClient } from "@/server/supabase-server";
-import type { ClientPresence, JoinedRoom, MasterPatch, PlaybackState, Role, RoomConfig, RoomSnapshot, ScriptDocument, Signal } from "@/types/teleprompter";
+import type { ClientPresence, JoinedRoom, MasterPatch, PlaybackState, RichTextSpan, Role, RoomConfig, RoomSnapshot, ScriptBlock, ScriptDocument, Signal } from "@/types/teleprompter";
 
 type SessionClaims = {
     roomId: string;
@@ -25,9 +25,17 @@ type RoomRow = {
 
 type ScriptRow = {
     content: string;
-    format: "text" | "markdown";
+    format: "text" | "markdown" | "blocks-v1";
     updated_at: string;
     content_version: number;
+};
+
+type ScriptBlockRow = {
+    id: string;
+    title: string;
+    content: {
+        spans?: RichTextSpan[];
+    };
 };
 
 type ConfigRow = {
@@ -98,8 +106,14 @@ export async function createRoom(name: string, producerPin: string, hostPin: str
     const scriptInsert = {
         room_id: room.id,
         content: defaultScript,
-        format: "markdown",
+        format: "blocks-v1",
         content_version: 1
+    };
+    const blockInsert = {
+        room_id: room.id,
+        position: 0,
+        title: "Market Update",
+        content: createRichTextContent(defaultScript)
     };
     const configInsert = {
         room_id: room.id,
@@ -111,13 +125,14 @@ export async function createRoom(name: string, producerPin: string, hostPin: str
         theme: { mode: "dark" }
     };
 
-    const [{ error: scriptError }, { error: configError }] = await Promise.all([
+    const [{ error: scriptError }, { error: blockError }, { error: configError }] = await Promise.all([
         supabase.from("scripts").insert(scriptInsert),
+        supabase.from("script_blocks").insert(blockInsert),
         supabase.from("room_config").insert(configInsert)
     ]);
 
-    if (scriptError || configError) {
-        throw new Error(scriptError?.message ?? configError?.message ?? "Failed to initialize room.");
+    if (scriptError || blockError || configError) {
+        throw new Error(scriptError?.message ?? blockError?.message ?? configError?.message ?? "Failed to initialize room.");
     }
 
     return readSnapshot(room.id);
@@ -207,18 +222,40 @@ export async function applyMasterPatch(token: string, patch: MasterPatch): Promi
         }
 
         const current = await readScript(room.id);
+        const blocks = createBlocksFromImportedText(patch.script);
         const { error } = await supabase
             .from("scripts")
-            .update({ content: patch.script, format: "markdown", content_version: current.contentVersion + 1, updated_at: now })
+            .update({ content: flattenScriptBlocks(blocks), format: "blocks-v1", content_version: current.contentVersion + 1, updated_at: now })
             .eq("room_id", room.id);
 
         if (error) {
             throw new Error(error.message);
         }
+
+        await replaceScriptBlocks(room.id, blocks, now);
+    }
+
+    if (patch.scriptBlocks) {
+        if (claims.role !== "producer") {
+            return null;
+        }
+
+        const current = await readScript(room.id);
+        const blocks = normalizeScriptBlocks(patch.scriptBlocks);
+        const { error } = await supabase
+            .from("scripts")
+            .update({ content: flattenScriptBlocks(blocks), format: "blocks-v1", content_version: current.contentVersion + 1, updated_at: now })
+            .eq("room_id", room.id);
+
+        if (error) {
+            throw new Error(error.message);
+        }
+
+        await replaceScriptBlocks(room.id, blocks, now);
     }
 
     if (patch.config) {
-        if (claims.role !== "producer") {
+        if (!canPatchConfig(claims, room, patch.config)) {
             return null;
         }
 
@@ -315,18 +352,46 @@ async function readSnapshot(roomId: string): Promise<RoomSnapshot> {
 
 async function readScript(roomId: string): Promise<ScriptDocument> {
     const supabase = createServerSupabaseClient();
-    const { data, error } = await supabase.from("scripts").select("*").eq("room_id", roomId).single<ScriptRow>();
+    const [{ data, error }, blocks] = await Promise.all([
+        supabase.from("scripts").select("*").eq("room_id", roomId).single<ScriptRow>(),
+        readScriptBlocks(roomId)
+    ]);
 
     if (error || !data) {
         throw new Error(error?.message ?? "Script not found.");
     }
 
+    const scriptBlocks = blocks.length > 0 ? blocks : createBlocksFromImportedText(data.content);
+
     return {
-        content: data.content,
-        format: data.format,
+        content: flattenScriptBlocks(scriptBlocks),
+        format: blocks.length > 0 ? "blocks-v1" : data.format,
         updatedAt: data.updated_at,
-        contentVersion: data.content_version
+        contentVersion: data.content_version,
+        blocks: scriptBlocks
     };
+}
+
+async function readScriptBlocks(roomId: string): Promise<ScriptBlock[]> {
+    const supabase = createServerSupabaseClient();
+    const { data, error } = await supabase
+        .from("script_blocks")
+        .select("id,title,content")
+        .eq("room_id", roomId)
+        .order("position", { ascending: true })
+        .returns<ScriptBlockRow[]>();
+
+    if (error) {
+        throw new Error(error.message);
+    }
+
+    return data.map((block) => ({
+        id: block.id,
+        title: block.title,
+        content: {
+            spans: normalizeRichTextSpans(block.content.spans ?? [])
+        }
+    }));
 }
 
 async function readConfig(roomId: string): Promise<RoomConfig> {
@@ -449,6 +514,110 @@ function mapConfigUpdate(config: Partial<RoomConfig>, updatedAt: string): Record
         ...(config.theme !== undefined ? { theme: { mode: config.theme } } : {}),
         updated_at: updatedAt
     };
+}
+
+async function replaceScriptBlocks(roomId: string, blocks: ScriptBlock[], updatedAt: string): Promise<void> {
+    const supabase = createServerSupabaseClient();
+    const { error: deleteError } = await supabase.from("script_blocks").delete().eq("room_id", roomId);
+
+    if (deleteError) {
+        throw new Error(deleteError.message);
+    }
+
+    const inserts = blocks.map((block, position) => ({
+        id: block.id,
+        room_id: roomId,
+        position,
+        title: block.title,
+        content: block.content,
+        updated_at: updatedAt
+    }));
+    const { error: insertError } = await supabase.from("script_blocks").insert(inserts);
+
+    if (insertError) {
+        throw new Error(insertError.message);
+    }
+}
+
+function canPatchConfig(claims: SessionClaims, room: RoomRow, config: Partial<RoomConfig>): boolean {
+    const keys = Object.keys(config) as Array<keyof RoomConfig>;
+    const hostKeys: Array<keyof RoomConfig> = ["defaultSpeed", "fontSize", "guidePosition"];
+
+    if (claims.role === "host") {
+        return room.active_host_client_id === claims.clientId && keys.every((key) => hostKeys.includes(key));
+    }
+
+    if (claims.role === "producer") {
+        return keys.every((key) => !hostKeys.includes(key));
+    }
+
+    return false;
+}
+
+function createRichTextContent(text: string): ScriptBlock["content"] {
+    return {
+        spans: [
+            {
+                id: randomBytes(8).toString("hex"),
+                text
+            }
+        ]
+    };
+}
+
+function createBlocksFromImportedText(text: string): ScriptBlock[] {
+    const sections = text
+        .split(/\n-{3,}\n/g)
+        .map((section) => section.trim())
+        .filter(Boolean);
+    const source = sections.length > 0 ? sections : [text];
+
+    return source.map((section, index) => ({
+        id: randomUUID(),
+        title: source.length === 1 ? "Script" : `Block ${index + 1}`,
+        content: createRichTextContent(section)
+    }));
+}
+
+function normalizeScriptBlocks(blocks: ScriptBlock[]): ScriptBlock[] {
+    if (blocks.length === 0) {
+        throw new Error("Script must include at least one block.");
+    }
+
+    const ids = new Set<string>();
+
+    return blocks.map((block, index) => {
+        if (ids.has(block.id)) {
+            throw new Error("Script block IDs must be unique.");
+        }
+
+        ids.add(block.id);
+
+        return {
+            id: block.id,
+            title: block.title.trim() || `Block ${index + 1}`,
+            content: {
+                spans: normalizeRichTextSpans(block.content.spans)
+            }
+        };
+    });
+}
+
+function normalizeRichTextSpans(spans: RichTextSpan[]): RichTextSpan[] {
+    const normalized = spans
+        .map((span) => ({
+            id: span.id || randomBytes(8).toString("hex"),
+            text: span.text,
+            ...(span.textColor && span.textColor !== "default" ? { textColor: span.textColor } : {}),
+            ...(span.backgroundColor && span.backgroundColor !== "default" ? { backgroundColor: span.backgroundColor } : {})
+        }))
+        .filter((span) => span.text.length > 0);
+
+    return normalized.length > 0 ? normalized : [{ id: randomBytes(8).toString("hex"), text: "" }];
+}
+
+function flattenScriptBlocks(blocks: ScriptBlock[]): string {
+    return blocks.map((block) => `${block.title}\n${block.content.spans.map((span) => span.text).join("")}`).join("\n\n");
 }
 
 function createRealtimeTopic(roomId: string, secret: string): string {

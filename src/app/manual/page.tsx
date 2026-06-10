@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import type { ReactNode } from "react";
+import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowLeft, Eye, Gauge, Radio, ShieldCheck, Signal, Users } from "lucide-react";
 import "./manual.css";
@@ -12,6 +12,13 @@ export const metadata: Metadata = {
 type ManualSection = {
     title: string;
     items: readonly string[];
+    shortcuts?: readonly ShortcutReference[];
+};
+
+type ShortcutReference = {
+    keys: string;
+    action: string;
+    useCase: string;
 };
 
 type RoleManual = {
@@ -21,7 +28,7 @@ type RoleManual = {
     sections: readonly ManualSection[];
 };
 
-const roleManuals = [
+const roleManuals: readonly RoleManual[] = [
     {
         title: "Producer",
         subtitle: "Room owner, script manager, display configuration, and talent signals.",
@@ -40,10 +47,11 @@ const roleManuals = [
             {
                 title: "Script operation",
                 items: [
-                    "Paste the rundown or script into the editor, or import a .txt or .md file.",
+                    "Create, reorder, or delete script blocks as the rundown changes.",
+                    "Paste text into blocks or import a .txt or .md file.",
+                    "Select words or phrases to apply text color or background color.",
                     "Use [PAUSA] for pause markers, [VTR: text] for media cues, parentheses for notes, --- for dividers, and **text** for emphasized lines.",
-                    "Review the preview area before publishing changes.",
-                    "Press Publish only when the script should update for the Host and all Viewers.",
+                    "Changes autosave and update the Host and Viewer displays without a Publish step.",
                     "Avoid large last-second rewrites while the Host is actively scrolling unless production confirms the change."
                 ]
             },
@@ -51,7 +59,7 @@ const roleManuals = [
                 title: "Live operation",
                 items: [
                     "Use the Host and Viewer counters to verify that expected devices are present.",
-                    "Adjust speed, font size, and guide position before air; changes are shared with connected clients.",
+                    "The Host controls speed, font size, and guide position before air; changes are shared with connected clients.",
                     "Send 30s, 60s, WRAP, STANDBY, GO, or a custom signal when production needs a visible cue.",
                     "Clear active signals once they are no longer needed.",
                     "If the Host loses control, share the Host invite link again or have the Host rejoin with the correct PIN."
@@ -76,21 +84,61 @@ const roleManuals = [
             {
                 title: "Prompt controls",
                 items: [
-                    "Press Play to begin live scrolling at the Producer-configured speed.",
+                    "Press Play to begin live scrolling at the selected speed.",
                     "Press Pause to hold the current position without resetting the script.",
                     "Use Top to return to the beginning of the script.",
                     "Use Up and Down for small manual corrections.",
+                    "Use Previous Block and Next Block to move through the Producer's block order.",
                     "Use Stop to halt playback and publish a stopped state to connected Viewers."
                 ]
             },
             {
-                title: "Keyboard operation",
+                title: "Shortcut reference",
+                shortcuts: [
+                    {
+                        keys: "Space",
+                        action: "Play / Pause",
+                        useCase: "Start or hold the live scroll without moving away from the current read position."
+                    },
+                    {
+                        keys: "Escape",
+                        action: "Stop",
+                        useCase: "Stop playback and publish a stopped state to connected Viewer devices."
+                    },
+                    {
+                        keys: "Arrow Up",
+                        action: "Nudge backward",
+                        useCase: "Make a small correction when the text is slightly ahead of the reader."
+                    },
+                    {
+                        keys: "Arrow Down",
+                        action: "Nudge forward",
+                        useCase: "Make a small correction when the text is slightly behind the reader."
+                    },
+                    {
+                        keys: "Page Up",
+                        action: "Previous block",
+                        useCase: "Jump to the previous Producer block in the current rundown order."
+                    },
+                    {
+                        keys: "Page Down",
+                        action: "Next block",
+                        useCase: "Jump to the next Producer block in the current rundown order."
+                    },
+                    {
+                        keys: "Home",
+                        action: "Top of script",
+                        useCase: "Return to the beginning of the full teleprompter script."
+                    },
+                    {
+                        keys: "End",
+                        action: "End of script",
+                        useCase: "Jump to the end of the full teleprompter script."
+                    }
+                ],
                 items: [
-                    "Space toggles play and pause.",
-                    "Arrow Up and Arrow Down nudge the prompt position.",
-                    "Page Up and Page Down perform larger jumps.",
-                    "Home returns to the top.",
-                    "Escape stops playback."
+                    "All Host shortcuts use single keys so they can be mapped to common Bluetooth presenters or pointer devices.",
+                    "Keyboard shortcuts are ignored while the operator is focused inside an input, slider, text area, or editable field."
                 ]
             }
         ]
@@ -130,13 +178,13 @@ const roleManuals = [
             }
         ]
     }
-] as const satisfies readonly RoleManual[];
+] as const;
 
 const operatingChecklist = [
     "Create the room before distributing links.",
     "Use different PINs for each role.",
     "Have the Host join before sending talent to fullscreen.",
-    "Publish the final script before live scrolling starts.",
+    "Confirm the Producer autosave status is Saved before live scrolling starts.",
     "Confirm Viewer devices show Following Host.",
     "Keep a Producer tab open throughout the production."
 ] as const;
@@ -146,7 +194,7 @@ const failureChecklist = [
     "If the Host disconnects, pause production scroll decisions until the Host rejoins.",
     "If the wrong person joins as Host, leave the room and rejoin with the correct role.",
     "If signals remain visible too long, the Producer should press Clear.",
-    "If a script update is missing, the Producer should publish again after confirming the editor content."
+    "If a script update is missing, the Producer should confirm the autosave status and retry the edit."
 ] as const;
 
 export default function ManualPage() {
@@ -201,6 +249,7 @@ export default function ManualPage() {
                             {manual.sections.map((section) => (
                                 <section key={section.title}>
                                     <h3>{section.title}</h3>
+                                    {section.shortcuts ? <ShortcutGrid shortcuts={section.shortcuts} /> : null}
                                     <ol>
                                         {section.items.map((item) => (
                                             <li key={item}>{item}</li>
@@ -213,6 +262,25 @@ export default function ManualPage() {
                 ))}
             </section>
         </main>
+    );
+}
+
+function ShortcutGrid({ shortcuts }: { shortcuts: readonly ShortcutReference[] }) {
+    return (
+        <div className="shortcut-grid">
+            <div className="shortcut-grid-header">Shortcut</div>
+            <div className="shortcut-grid-header">Action</div>
+            <div className="shortcut-grid-header">Use case</div>
+            {shortcuts.map((shortcut) => (
+                <Fragment key={shortcut.keys}>
+                    <div>
+                        <kbd>{shortcut.keys}</kbd>
+                    </div>
+                    <strong>{shortcut.action}</strong>
+                    <span>{shortcut.useCase}</span>
+                </Fragment>
+            ))}
+        </div>
     );
 }
 

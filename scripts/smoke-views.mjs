@@ -40,7 +40,9 @@ assert(viewer.snapshot.code === code, "viewer receives room snapshot");
 
 await expectPatchReject(code, producer.token, { playback: { isPlaying: true, speed: 2, scrollTop: 10, scrollRatio: 0.1 } });
 await expectPatchReject(code, host.token, { signal: { type: "GO", value: null, expiresAt: null } });
+await expectPatchReject(code, host.token, { scriptBlocks: [{ id: crypto.randomUUID(), title: "Blocked", content: { spans: [{ id: `blocked-span-${suffix}`, text: "no" }] } }] });
 await expectPatchReject(code, viewer.token, { script: "viewer cannot write" });
+await expectPatchReject(code, viewer.token, { config: { fontSize: 80 } });
 
 console.log(`Smoke views passed for room ${code}`);
 
