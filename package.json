@@ -13,6 +13,7 @@
         "db:migrate": "node scripts/apply-migrations.mjs",
         "smoke:playback": "node scripts/smoke-playback.mjs",
         "smoke:views": "node scripts/smoke-views.mjs",
+        "check:rich-selection": "node scripts/check-rich-selection.mjs",
         "start": "next start",
         "lint": "eslint --max-warnings=0 src --ext .ts,.tsx",
         "typecheck": "next typegen && tsc --noEmit"

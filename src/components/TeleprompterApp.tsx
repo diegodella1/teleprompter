@@ -792,11 +792,8 @@ function ProducerView({ session, onPatch }: { session: Session; onPatch: (patch:
                 return;
             }
 
-            const beforeRange = range.cloneRange();
-            beforeRange.selectNodeContents(editor);
-            beforeRange.setEnd(range.startContainer, range.startOffset);
-            const start = beforeRange.toString().length;
-            const end = start + selection.toString().length;
+            const start = getEditorTextOffset(editor, range.startContainer, range.startOffset);
+            const end = getEditorTextOffset(editor, range.endContainer, range.endOffset);
 
             let nextActiveSpans: RichTextSpan[] | null = null;
 
@@ -1731,7 +1728,58 @@ function blockToPlainText(block: ScriptBlock): string {
     return block.content.spans.map((span) => span.text).join("");
 }
 
-function applyColorToSpans(spans: RichTextSpan[], start: number, end: number, kind: "textColor" | "backgroundColor", token: RichTextColorToken): RichTextSpan[] {
+export function getEditorTextOffset(root: Node, target: Node, targetOffset: number): number {
+    let offset = 0;
+    let found = false;
+
+    const visit = (node: Node): void => {
+        if (found) {
+            return;
+        }
+
+        if (node === target) {
+            if (node.nodeType === Node.TEXT_NODE) {
+                offset += targetOffset;
+            } else {
+                const children = Array.from(node.childNodes).slice(0, targetOffset);
+                offset += children.reduce((total, child) => total + getRenderedTextLength(child), 0);
+            }
+
+            found = true;
+            return;
+        }
+
+        if (node.nodeType === Node.TEXT_NODE) {
+            offset += node.textContent?.length ?? 0;
+            return;
+        }
+
+        if (node.nodeName === "BR") {
+            offset += 1;
+            return;
+        }
+
+        node.childNodes.forEach(visit);
+    };
+
+    visit(root);
+
+    return offset;
+}
+
+function getRenderedTextLength(node: Node): number {
+    if (node.nodeType === Node.TEXT_NODE) {
+        return node.textContent?.length ?? 0;
+    }
+
+    if (node.nodeName === "BR") {
+        return 1;
+    }
+
+    return Array.from(node.childNodes).reduce((total, child) => total + getRenderedTextLength(child), 0);
+}
+
+export function applyColorToSpans(spans: RichTextSpan[], start: number, end: number, kind: "textColor" | "backgroundColor", token: RichTextColorToken): RichTextSpan[] {
     let cursor = 0;
     const next: RichTextSpan[] = [];
 
