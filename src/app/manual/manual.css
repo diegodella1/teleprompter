@@ -7,6 +7,7 @@
 
 .manual-hero,
 .manual-summary,
+.flow-strip,
 .checklist-grid,
 .role-manuals {
     width: min(1180px, 100%);
@@ -78,6 +79,7 @@
 }
 
 .manual-summary,
+.flow-strip,
 .checklist-grid {
     display: grid;
     gap: var(--space-5);
@@ -86,6 +88,49 @@
 .manual-summary {
     grid-template-columns: repeat(3, minmax(0, 1fr));
     margin-bottom: var(--space-6);
+}
+
+.flow-strip {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    margin-bottom: var(--space-6);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-surface);
+    overflow: hidden;
+}
+
+.flow-strip article {
+    min-width: 0;
+    padding: var(--space-5);
+    border-right: 1px solid var(--color-border);
+}
+
+.flow-strip article:last-child {
+    border-right: 0;
+}
+
+.flow-strip span {
+    display: inline-grid;
+    place-items: center;
+    width: 28px;
+    height: 28px;
+    border: 1px solid var(--color-border-accent);
+    border-radius: var(--radius-full);
+    color: var(--color-accent);
+    font-family: var(--font-mono);
+    font-size: 12px;
+}
+
+.flow-strip strong {
+    display: block;
+    margin-top: var(--space-3);
+    font-size: 18px;
+}
+
+.flow-strip p {
+    margin: var(--space-2) 0 0;
+    color: var(--color-text-secondary);
+    line-height: 1.45;
 }
 
 .manual-summary article,
@@ -190,6 +235,10 @@
     padding-top: var(--space-4);
 }
 
+.section-list .wide-section {
+    grid-column: 1 / -1;
+}
+
 .section-list h3 {
     font-size: 18px;
 }
@@ -243,9 +292,19 @@
 
 @media (max-width: 980px) {
     .manual-summary,
+    .flow-strip,
     .checklist-grid,
     .section-list {
         grid-template-columns: 1fr;
+    }
+
+    .flow-strip article {
+        border-right: 0;
+        border-bottom: 1px solid var(--color-border);
+    }
+
+    .flow-strip article:last-child {
+        border-bottom: 0;
     }
 }
 
@@ -264,9 +323,19 @@
 
     .shortcut-grid {
         grid-template-columns: 1fr;
+        gap: 0;
+        background: var(--color-bg-base);
     }
 
     .shortcut-grid-header {
         display: none;
+    }
+
+    .shortcut-grid > * {
+        border-bottom: 1px solid var(--color-border);
+    }
+
+    .shortcut-grid span {
+        padding-top: 0;
     }
 }

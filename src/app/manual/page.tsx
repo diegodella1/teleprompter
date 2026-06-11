@@ -31,16 +31,16 @@ type RoleManual = {
 const roleManuals: readonly RoleManual[] = [
     {
         title: "Producer",
-        subtitle: "Room owner, script manager, display configuration, and talent signals.",
-        responsibility: "Use this role when you need to prepare the room, publish the script, invite participants, monitor connected clients, tune prompt settings, and send live production cues.",
+        subtitle: "Room owner, script manager, invite coordinator, and talent signals.",
+        responsibility: "Use this role when you need to create the room, prepare the script, manage script blocks, invite participants, monitor connected clients, and send live production cues.",
         sections: [
             {
                 title: "Before the show",
                 items: [
                     "Create a room from the landing screen with a clear production name.",
-                    "Set separate PINs for Producer, Host, and Viewer access.",
-                    "Copy the secure invite links for the Producer, Host, and Viewer devices.",
-                    "Join the Producer Console after the room is ready.",
+                    "Set separate PINs for Producer, Host, and Viewer fallback access.",
+                    "Copy the secure invite links for Producer, Host, and Viewer devices.",
+                    "Open the Producer Console after the room is ready.",
                     "Confirm that the Host and Viewer counts update as remote devices connect."
                 ]
             },
@@ -51,7 +51,7 @@ const roleManuals: readonly RoleManual[] = [
                     "Paste text into blocks or import a .txt or .md file.",
                     "Select words or phrases to apply text color or background color.",
                     "Use [PAUSA] for pause markers, [VTR: text] for media cues, parentheses for notes, --- for dividers, and **text** for emphasized lines.",
-                    "Changes autosave and update the Host and Viewer displays without a Publish step.",
+                    "Wait for the status to return to Saved after edits; the Host and Viewer displays update without a Publish step.",
                     "Avoid large last-second rewrites while the Host is actively scrolling unless production confirms the change."
                 ]
             },
@@ -59,7 +59,7 @@ const roleManuals: readonly RoleManual[] = [
                 title: "Live operation",
                 items: [
                     "Use the Host and Viewer counters to verify that expected devices are present.",
-                    "The Host controls speed, font size, and guide position before air; changes are shared with connected clients.",
+                    "Confirm the Host has set speed, font size, and guide position before air.",
                     "Send 30s, 60s, WRAP, STANDBY, GO, or a custom signal when production needs a visible cue.",
                     "Clear active signals once they are no longer needed.",
                     "If the Host loses control, share the Host invite link again or have the Host rejoin manually with the correct PIN."
@@ -76,7 +76,7 @@ const roleManuals: readonly RoleManual[] = [
                 title: "Joining",
                 items: [
                     "Open the Host invite link.",
-                    "Enter a recognizable display name; use the Host PIN only if the invite link is missing or rejected.",
+                    "Enter a recognizable display name; use the Host PIN only if the invite is missing or rejected.",
                     "Wait for the script to load and verify the room code in the top bar.",
                     "Confirm with the Producer that the Host status is visible before live operation."
                 ]
@@ -89,6 +89,7 @@ const roleManuals: readonly RoleManual[] = [
                     "Use Top to return to the beginning of the script.",
                     "Use Up and Down for small manual corrections.",
                     "Use Previous Block and Next Block to move through the Producer's block order.",
+                    "Adjust Speed, Font, and Guide from the Host controls; those settings are shared with connected displays.",
                     "Use Stop to halt playback and publish a stopped state to connected Viewers."
                 ]
             },
@@ -152,7 +153,7 @@ const roleManuals: readonly RoleManual[] = [
                 title: "Joining",
                 items: [
                     "Open the Viewer invite link.",
-                    "Enter a display name; use the Viewer PIN only if the invite link is missing or rejected.",
+                    "Enter a display name; use the Viewer PIN only if the invite is missing or rejected.",
                     "Wait for the script, room configuration, and latest scroll state to load.",
                     "Check that the status reads Following Host when the Host is connected."
                 ]
@@ -182,7 +183,8 @@ const roleManuals: readonly RoleManual[] = [
 
 const operatingChecklist = [
     "Create the room before distributing links.",
-    "Use different PINs for each role as manual fallback access.",
+    "Share secure invite links instead of asking operators to choose roles manually.",
+    "Keep different PINs available as manual fallback access.",
     "Have the Host join before sending talent to fullscreen.",
     "Confirm the Producer autosave status is Saved before live scrolling starts.",
     "Confirm Viewer devices show Following Host.",
@@ -195,6 +197,29 @@ const failureChecklist = [
     "If the wrong person joins as Host, leave the room and rejoin with the correct role.",
     "If signals remain visible too long, the Producer should press Clear.",
     "If a script update is missing, the Producer should confirm the autosave status and retry the edit."
+] as const;
+
+const liveFlow = [
+    {
+        step: "1",
+        title: "Create",
+        text: "Producer creates the room and gets secure role invite links."
+    },
+    {
+        step: "2",
+        title: "Prepare",
+        text: "Producer edits blocks and waits for Saved before air."
+    },
+    {
+        step: "3",
+        title: "Drive",
+        text: "Host controls playback, block jumps, speed, font, and guide."
+    },
+    {
+        step: "4",
+        title: "Read",
+        text: "Viewers follow the Host and watch production signals."
+    }
 ] as const;
 
 export default function ManualPage() {
@@ -229,6 +254,16 @@ export default function ManualPage() {
                 </article>
             </section>
 
+            <section className="flow-strip" aria-label="Live workflow">
+                {liveFlow.map((item) => (
+                    <article key={item.step}>
+                        <span>{item.step}</span>
+                        <strong>{item.title}</strong>
+                        <p>{item.text}</p>
+                    </article>
+                ))}
+            </section>
+
             <section className="checklist-grid" aria-label="Production checklist">
                 <Checklist title="Pre-flight checklist" icon={<Radio size={20} />} items={operatingChecklist} />
                 <Checklist title="Recovery checklist" icon={<Signal size={20} />} items={failureChecklist} />
@@ -247,7 +282,7 @@ export default function ManualPage() {
                         <p className="responsibility">{manual.responsibility}</p>
                         <div className="section-list">
                             {manual.sections.map((section) => (
-                                <section key={section.title}>
+                                <section className={section.shortcuts ? "wide-section" : undefined} key={section.title}>
                                     <h3>{section.title}</h3>
                                     {section.shortcuts ? <ShortcutGrid shortcuts={section.shortcuts} /> : null}
                                     <ol>
