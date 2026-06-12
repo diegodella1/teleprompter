@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { Fragment, type ReactNode } from "react";
 import Link from "next/link";
-import { ArrowLeft, Eye, Gauge, Radio, ShieldCheck, Signal, Users } from "lucide-react";
+import { ArrowLeft, Eye, FileText, Gauge, Radio, ShieldCheck, Signal, Users } from "lucide-react";
 import "./manual.css";
 
 export const metadata: Metadata = {
@@ -48,11 +48,23 @@ const roleManuals: readonly RoleManual[] = [
                 title: "Script operation",
                 items: [
                     "Create, reorder, or delete script blocks as the rundown changes.",
-                    "Paste text into blocks or import a .txt or .md file.",
-                    "Select words or phrases to apply text color or background color.",
-                    "Use [PAUSA] for pause markers, [VTR: text] for media cues, parentheses for notes, --- for dividers, and **text** for emphasized lines.",
+                    "Paste formatted text into blocks or import a .txt, .md, .html, or .docx file.",
+                    "Use [BLOCK: Title], ### Title, or a standalone --- line to split imported files into blocks automatically.",
+                    "Use [PAUSE] for pause markers, [VTR: text] for media cues, parentheses for notes, and **text** for emphasized lines.",
+                    "Select words or phrases to apply Signal-safe text color or background color.",
                     "Wait for the status to return to Saved after edits; the Host and Viewer displays update without a Publish step.",
                     "Avoid large last-second rewrites while the Host is actively scrolling unless production confirms the change."
+                ]
+            },
+            {
+                title: "DOCX preparation",
+                items: [
+                    "Write the document in English and use explicit block markers where each new teleprompter block should start.",
+                    "Place [BLOCK: Segment Title] on its own line before each segment when you want the most predictable import.",
+                    "Use ### Segment Title as a Markdown-style alternative when writing in a shared script document.",
+                    "Use a standalone --- line only when you want to split the script without naming the next block.",
+                    "Apply bold, italic, underline, text color, or highlight in Word only where it should appear on the teleprompter.",
+                    "Avoid Word tables, images, comments, page headers, footers, columns, and layout-only formatting; the importer keeps teleprompter-safe text styling, not page layout."
                 ]
             },
             {
@@ -222,6 +234,19 @@ const liveFlow = [
     }
 ] as const;
 
+const importFormatExample = `[BLOCK: Opening Market Read]
+Good morning. Bitcoin is holding key levels into the US session.
+
+[VTR: BTC daily chart]
+
+[PAUSE]
+
+[BLOCK: Guest Intro]
+Joining us now is the desk for the market structure read.
+
+### Wrap
+That is the latest from the Roxom.TV live desk.`;
+
 export default function ManualPage() {
     return (
         <main className="manual-shell">
@@ -267,6 +292,46 @@ export default function ManualPage() {
             <section className="checklist-grid" aria-label="Production checklist">
                 <Checklist title="Pre-flight checklist" icon={<Radio size={20} />} items={operatingChecklist} />
                 <Checklist title="Recovery checklist" icon={<Signal size={20} />} items={failureChecklist} />
+            </section>
+
+            <section className="format-guide" aria-label="Script import format">
+                <div className="format-guide-heading">
+                    <FileText size={24} />
+                    <div>
+                        <span className="eyebrow">SCRIPT IMPORT FORMAT</span>
+                        <h2>Preparing DOCX and rich text for automatic blocks</h2>
+                    </div>
+                </div>
+                <p>
+                    The importer reads DOCX, HTML, Markdown, and plain text into teleprompter blocks. It preserves safe inline formatting such as bold, italic, underline, text color, and highlights, then maps colors to the Signal palette so every device renders consistently.
+                </p>
+                <div className="format-guide-grid">
+                    <article>
+                        <h3>Block markers</h3>
+                        <ul>
+                            <li>
+                                <code>[BLOCK: Title]</code> starts a named block.
+                            </li>
+                            <li>
+                                <code>### Title</code> also starts a named block.
+                            </li>
+                            <li>
+                                <code>---</code> on its own line splits blocks without naming the next one.
+                            </li>
+                            <li>If no marker exists, the import creates one block named Script.</li>
+                        </ul>
+                    </article>
+                    <article>
+                        <h3>DOCX rules</h3>
+                        <ul>
+                            <li>Put block markers on their own paragraph lines in Word.</li>
+                            <li>Use Word bold, italic, underline, font color, and highlight normally.</li>
+                            <li>Keep rundown notes as normal text; parenthetical lines render as smaller notes.</li>
+                            <li>Do not rely on page breaks, margins, columns, images, or tables for teleprompter behavior.</li>
+                        </ul>
+                    </article>
+                </div>
+                <pre aria-label="Script import example">{importFormatExample}</pre>
             </section>
 
             <section className="role-manuals" aria-label="Role manuals">

@@ -9,6 +9,7 @@
 .manual-summary,
 .flow-strip,
 .checklist-grid,
+.format-guide,
 .role-manuals {
     width: min(1180px, 100%);
     margin: 0 auto;
@@ -170,6 +171,94 @@
     margin-bottom: var(--space-6);
 }
 
+.format-guide {
+    display: grid;
+    gap: var(--space-5);
+    margin-bottom: var(--space-6);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    background: var(--color-bg-surface);
+    padding: var(--space-6);
+}
+
+.format-guide-heading {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-3);
+}
+
+.format-guide-heading svg {
+    color: var(--color-accent);
+}
+
+.format-guide h2,
+.format-guide h3 {
+    margin: 0;
+    letter-spacing: 0;
+}
+
+.format-guide h2 {
+    margin-top: var(--space-1);
+    font-size: 30px;
+}
+
+.format-guide h3 {
+    font-size: 18px;
+}
+
+.format-guide p,
+.format-guide li {
+    color: var(--color-text-secondary);
+    line-height: 1.55;
+}
+
+.format-guide p {
+    max-width: 920px;
+    margin: 0;
+}
+
+.format-guide-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-5);
+}
+
+.format-guide article {
+    min-width: 0;
+    border-top: 1px solid var(--color-border);
+    padding-top: var(--space-4);
+}
+
+.format-guide ul {
+    margin: var(--space-4) 0 0;
+    padding-left: var(--space-5);
+}
+
+.format-guide li {
+    margin-bottom: var(--space-2);
+}
+
+.format-guide code,
+.format-guide pre {
+    font-family: var(--font-mono);
+}
+
+.format-guide code {
+    color: var(--color-accent);
+}
+
+.format-guide pre {
+    overflow: auto;
+    margin: 0;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg-base);
+    color: var(--color-text-primary);
+    padding: var(--space-5);
+    line-height: 1.55;
+    white-space: pre-wrap;
+}
+
 .checklist {
     padding: var(--space-5);
 }
@@ -294,6 +383,7 @@
     .manual-summary,
     .flow-strip,
     .checklist-grid,
+    .format-guide-grid,
     .section-list {
         grid-template-columns: 1fr;
     }
@@ -318,6 +408,14 @@
     }
 
     .role-heading {
+        display: grid;
+    }
+
+    .format-guide {
+        padding: var(--space-5);
+    }
+
+    .format-guide-heading {
         display: grid;
     }
 
