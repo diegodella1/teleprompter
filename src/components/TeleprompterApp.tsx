@@ -3,6 +3,7 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { ArrowDown, ArrowUp, BookOpen, Check, Copy, Expand, FileUp, Link2, LogIn, Palette, Pause, Play, Plus, Radio, RotateCcw, Send, Settings, SkipBack, SkipForward, Square, Trash2, Users } from "lucide-react";
+import { createBlocksFromImportedHtml, createBlocksFromImportedText, createId, createRichTextContent, importScriptFile } from "@/lib/script-import";
 import { createBrowserSupabaseClient } from "@/lib/supabase-browser";
 import type { ApiResult, JoinedRoom, MasterPatch, RichTextColorToken, RichTextSpan, Role, RoomConfig, RoomSnapshot, ScriptBlock, ScriptDocument, SignalType } from "@/types/teleprompter";
 import "./teleprompter.css";
@@ -831,7 +832,7 @@ function ProducerView({ session, onPatch }: { session: Session; onPatch: (patch:
             return;
         }
 
-        const blocks = createBlocksFromImportedText(await file.text());
+        const blocks = await importScriptFile(file);
         setBlockDraft(blocks);
         scheduleAutosave(blocks, 250);
         setActiveBlockId(blocks[0]?.id ?? null);
@@ -901,7 +902,7 @@ function ProducerView({ session, onPatch }: { session: Session; onPatch: (patch:
                     <span>{saveStatusLabel(saveStatus)}</span>
                     <label className="file-button">
                         <FileUp size={18} /> Import
-                        <input type="file" accept=".txt,.md" onChange={(event) => void importBlocks(event.currentTarget.files?.[0])} />
+                        <input type="file" accept=".txt,.md,.html,.htm,.docx" onChange={(event) => void importBlocks(event.currentTarget.files?.[0])} />
                     </label>
                 </div>
                 <div className="format-toolbar">
@@ -939,6 +940,7 @@ function ProducerView({ session, onPatch }: { session: Session; onPatch: (patch:
                                 }}
                                 onFocus={() => setActiveBlockId(block.id)}
                                 onTextChange={(text) => updateBlockText(block.id, text)}
+                                onSpansChange={(spans) => updateBlock(block.id, { content: { spans } })}
                             />
                         </article>
                     ))}
@@ -953,12 +955,14 @@ function RichBlockEditor({
     block,
     setEditorRef,
     onFocus,
-    onTextChange
+    onTextChange,
+    onSpansChange
 }: {
     block: ScriptBlock;
     setEditorRef: (node: HTMLDivElement | null) => void;
     onFocus: () => void;
     onTextChange: (text: string) => void;
+    onSpansChange: (spans: RichTextSpan[]) => void;
 }) {
     const ref = useRef<HTMLDivElement | null>(null);
     const inputUpdateRef = useRef(false);
@@ -994,6 +998,33 @@ function RichBlockEditor({
             onInput={(event) => {
                 inputUpdateRef.current = true;
                 onTextChange(event.currentTarget.innerText);
+            }}
+            onPaste={(event) => {
+                const html = event.clipboardData.getData("text/html");
+                const text = event.clipboardData.getData("text/plain");
+
+                if (!html && !text) {
+                    return;
+                }
+
+                event.preventDefault();
+                inputUpdateRef.current = true;
+                const pastedBlocks = html ? createBlocksFromImportedHtml(html) : createBlocksFromImportedText(text);
+                const pastedSpans = blocksToSpans(pastedBlocks);
+                const selection = window.getSelection();
+                const range = selection && selection.rangeCount > 0 ? selection.getRangeAt(0) : null;
+                const node = ref.current;
+                const rangeIsInsideEditor = Boolean(node && range && node.contains(range.commonAncestorContainer));
+                const start = node && range && rangeIsInsideEditor ? getEditorTextOffset(node, range.startContainer, range.startOffset) : blockToPlainText(block).length;
+                const end = node && range && rangeIsInsideEditor ? getEditorTextOffset(node, range.endContainer, range.endOffset) : start;
+                const nextSpans = insertSpansAtRange(block.content.spans, Math.min(start, end), Math.max(start, end), pastedSpans);
+                onSpansChange(nextSpans);
+
+                if (node) {
+                    node.innerHTML = spansToEditorHtml(nextSpans);
+                }
+
+                selection?.removeAllRanges();
             }}
         />
     );
@@ -1619,8 +1650,8 @@ function createPromptLine(id: string, spans: RichTextSpan[], blockId: string): P
         return { id, spans: [{ id: `${id}-divider`, text: "" }], className: "divider", blockId, isHeading: false };
     }
 
-    if (text === "[PAUSA]") {
-        return { id, spans: [{ id: `${id}-pause`, text: "PAUSA" }], className: "pause-marker", blockId, isHeading: false };
+    if (text === "[PAUSE]" || text === "[PAUSA]") {
+        return { id, spans: [{ id: `${id}-pause`, text: "PAUSE" }], className: "pause-marker", blockId, isHeading: false };
     }
 
     if (text.startsWith("[VTR:")) {
@@ -1652,11 +1683,26 @@ function splitSpansIntoLines(spans: RichTextSpan[]): RichTextSpan[][] {
 }
 
 function stripBoldMarkers(spans: RichTextSpan[]): RichTextSpan[] {
-    return spans.map((span) => ({ ...span, text: span.text.replaceAll("**", "") }));
+    const text = spans.map((span) => span.text).join("");
+
+    if (!text.includes("**")) {
+        return spans;
+    }
+
+    return spans.map((span) => ({ ...span, bold: text.startsWith("**") || span.bold, text: span.text.replaceAll("**", "") }));
 }
 
 function spanClassName(span: RichTextSpan): string {
-    return ["rich-span", span.textColor ? `text-${span.textColor}` : "", span.backgroundColor ? `bg-${span.backgroundColor}` : ""].filter(Boolean).join(" ");
+    return [
+        "rich-span",
+        span.bold ? "span-bold" : "",
+        span.italic ? "span-italic" : "",
+        span.underline ? "span-underline" : "",
+        span.textColor ? `text-${span.textColor}` : "",
+        span.backgroundColor ? `bg-${span.backgroundColor}` : ""
+    ]
+        .filter(Boolean)
+        .join(" ");
 }
 
 function spansToEditorHtml(spans: RichTextSpan[]): string {
@@ -1675,37 +1721,12 @@ function escapeHtml(value: string): string {
         .replaceAll("\n", "<br>");
 }
 
-function createRichTextContent(text: string): ScriptBlock["content"] {
-    return {
-        spans: [
-            {
-                id: createClientId(),
-                text
-            }
-        ]
-    };
-}
-
 function createEmptyBlock(index: number): ScriptBlock {
     return {
-        id: createClientId(),
+        id: createId(),
         title: `Block ${index}`,
         content: createRichTextContent("")
     };
-}
-
-function createBlocksFromImportedText(text: string): ScriptBlock[] {
-    const sections = text
-        .split(/\n-{3,}\n/g)
-        .map((section) => section.trim())
-        .filter(Boolean);
-    const source = sections.length > 0 ? sections : [text];
-
-    return source.map((section, index) => ({
-        id: createClientId(),
-        title: source.length === 1 ? "Script" : `Block ${index + 1}`,
-        content: createRichTextContent(section)
-    }));
 }
 
 function cloneBlocks(script: ScriptDocument): ScriptBlock[] {
@@ -1726,6 +1747,58 @@ function blocksSignature(blocks: ScriptBlock[]): string {
 
 function blockToPlainText(block: ScriptBlock): string {
     return block.content.spans.map((span) => span.text).join("");
+}
+
+function blocksToSpans(blocks: ScriptBlock[]): RichTextSpan[] {
+    return blocks.flatMap((block, index) => {
+        const separator: RichTextSpan[] = index === 0 ? [] : [{ id: createId(), text: "\n\n" }];
+
+        return [...separator, ...block.content.spans.map((span) => ({ ...span, id: createId() }))];
+    });
+}
+
+function insertSpansAtRange(spans: RichTextSpan[], start: number, end: number, inserted: RichTextSpan[]): RichTextSpan[] {
+    let cursor = 0;
+    const next: RichTextSpan[] = [];
+    let insertedAdded = false;
+
+    spans.forEach((span) => {
+        const spanStart = cursor;
+        const spanEnd = cursor + span.text.length;
+        cursor = spanEnd;
+
+        if (spanEnd <= start || spanStart >= end) {
+            if (!insertedAdded && spanStart >= end) {
+                next.push(...inserted.map((item) => ({ ...item, id: createId() })));
+                insertedAdded = true;
+            }
+
+            next.push(span);
+            return;
+        }
+
+        const before = span.text.slice(0, Math.max(0, start - spanStart));
+        const after = span.text.slice(Math.min(span.text.length, end - spanStart));
+
+        if (before) {
+            next.push({ ...span, id: createId(), text: before });
+        }
+
+        if (!insertedAdded) {
+            next.push(...inserted.map((item) => ({ ...item, id: createId() })));
+            insertedAdded = true;
+        }
+
+        if (after) {
+            next.push({ ...span, id: createId(), text: after });
+        }
+    });
+
+    if (!insertedAdded) {
+        next.push(...inserted.map((item) => ({ ...item, id: createId() })));
+    }
+
+    return next.length > 0 ? next : createRichTextContent("").spans;
 }
 
 export function getEditorTextOffset(root: Node, target: Node, targetOffset: number): number {

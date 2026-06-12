@@ -570,17 +570,60 @@ function createRichTextContent(text: string): ScriptBlock["content"] {
 }
 
 function createBlocksFromImportedText(text: string): ScriptBlock[] {
-    const sections = text
-        .split(/\n-{3,}\n/g)
-        .map((section) => section.trim())
-        .filter(Boolean);
-    const source = sections.length > 0 ? sections : [text];
+    const blocks: ScriptBlock[] = [];
+    let currentTitle = "Script";
+    let currentLines: string[] = [];
+    let foundExplicitBlock = false;
 
-    return source.map((section, index) => ({
-        id: randomUUID(),
-        title: source.length === 1 ? "Script" : `Block ${index + 1}`,
-        content: createRichTextContent(section)
-    }));
+    const flush = (): void => {
+        const content = currentLines.join("\n").trim();
+
+        if (!content && blocks.length > 0) {
+            return;
+        }
+
+        blocks.push({
+            id: randomUUID(),
+            title: currentTitle.trim() || `Block ${blocks.length + 1}`,
+            content: createRichTextContent(content)
+        });
+        currentTitle = `Block ${blocks.length + 1}`;
+        currentLines = [];
+    };
+
+    text.replace(/\r\n?/g, "\n").split("\n").forEach((line) => {
+        const marker = parseBlockMarker(line);
+
+        if (marker) {
+            if (foundExplicitBlock || currentLines.some((item) => item.trim().length > 0)) {
+                flush();
+            }
+
+            foundExplicitBlock = true;
+            currentTitle = marker;
+            currentLines = [];
+            return;
+        }
+
+        if (line.trim() === "---") {
+            flush();
+            return;
+        }
+
+        currentLines.push(line);
+    });
+
+    if (currentLines.some((line) => line.trim().length > 0) || blocks.length === 0) {
+        flush();
+    }
+
+    return blocks;
+}
+
+function parseBlockMarker(text: string): string | null {
+    const match = /^\s*(?:\[BLOCK:\s*(.+?)\s*\]|#{3,}\s+(.+?))\s*$/i.exec(text);
+
+    return match?.[1]?.trim() || match?.[2]?.trim() || null;
 }
 
 function normalizeScriptBlocks(blocks: ScriptBlock[]): ScriptBlock[] {
@@ -612,6 +655,9 @@ function normalizeRichTextSpans(spans: RichTextSpan[]): RichTextSpan[] {
         .map((span) => ({
             id: span.id || randomBytes(8).toString("hex"),
             text: span.text,
+            ...(span.bold ? { bold: true } : {}),
+            ...(span.italic ? { italic: true } : {}),
+            ...(span.underline ? { underline: true } : {}),
             ...(span.textColor && span.textColor !== "default" ? { textColor: span.textColor } : {}),
             ...(span.backgroundColor && span.backgroundColor !== "default" ? { backgroundColor: span.backgroundColor } : {})
         }))

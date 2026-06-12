@@ -7,6 +7,9 @@ export type RichTextColorToken = "default" | "accent" | "live" | "warning" | "bl
 export type RichTextSpan = {
     id: string;
     text: string;
+    bold?: boolean;
+    italic?: boolean;
+    underline?: boolean;
     textColor?: RichTextColorToken;
     backgroundColor?: RichTextColorToken;
 };

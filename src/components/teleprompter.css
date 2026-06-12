@@ -425,6 +425,20 @@ button:disabled {
     background: rgba(255, 79, 216, 0.42);
 }
 
+.span-bold {
+    font-weight: 800;
+}
+
+.span-italic {
+    font-style: italic;
+}
+
+.span-underline {
+    text-decoration: underline;
+    text-decoration-thickness: 0.08em;
+    text-underline-offset: 0.14em;
+}
+
 .swatch.text-default,
 .swatch.bg-default {
     background: var(--color-bg-base);
