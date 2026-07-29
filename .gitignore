@@ -6,6 +6,7 @@ out
 dist
 .vercel
 coverage
+test-results
 .env
 .env.local
 .env.*.local

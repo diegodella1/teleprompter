@@ -1,9 +1,26 @@
 import type { Metadata } from "next";
+import { Archivo_Narrow, DM_Sans, Space_Mono } from "next/font/google";
 import "./globals.css";
 
+const interfaceFont = DM_Sans({
+    subsets: ["latin"],
+    variable: "--font-interface"
+});
+
+const prompterFont = Archivo_Narrow({
+    subsets: ["latin"],
+    variable: "--font-prompter"
+});
+
+const technicalFont = Space_Mono({
+    subsets: ["latin"],
+    variable: "--font-technical",
+    weight: ["400", "700"]
+});
+
 export const metadata: Metadata = {
-    title: "Teleprompter",
-    description: "Collaborative web teleprompter for remote live production"
+    title: "TelePRO | Collaborative Broadcast Teleprompter",
+    description: "Shared script, playback control, and synchronized prompting for remote live production."
 };
 
 type RootLayoutProps = Readonly<{
@@ -13,7 +30,7 @@ type RootLayoutProps = Readonly<{
 export default function RootLayout({ children }: RootLayoutProps) {
     return (
         <html lang="en">
-            <body>{children}</body>
+            <body className={`${interfaceFont.variable} ${prompterFont.variable} ${technicalFont.variable}`}>{children}</body>
         </html>
     );
 }

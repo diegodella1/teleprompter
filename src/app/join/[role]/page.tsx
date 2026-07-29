@@ -21,12 +21,12 @@ export default async function RoleJoinPage({ params, searchParams }: RoleJoinPag
             <main className="shell">
                 <section className="entry ready">
                     <div className="brand compact">
-                        <span>TELEPROMPTER</span>
+                        <span>TELEPRO</span>
                         <h1>Invalid invite</h1>
                         <p>This invite role is not supported. Ask the Producer for a new link.</p>
                     </div>
                     <Link className="manual-link" href="/">
-                        Back to teleprompter
+                        Back to TelePRO
                     </Link>
                 </section>
             </main>

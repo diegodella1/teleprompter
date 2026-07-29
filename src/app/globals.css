@@ -1,26 +1,26 @@
 :root {
-    --color-bg-base: #060707;
-    --color-bg-surface: #191919;
-    --color-bg-elevated: #232524;
-    --color-overlay: rgba(255, 255, 255, 0.06);
-    --color-selected: rgba(26, 231, 132, 0.12);
-    --color-accent: #1ae784;
-    --color-accent-active: #16cc74;
+    --color-bg-base: #0e0e0e;
+    --color-bg-surface: #1c1b1b;
+    --color-bg-elevated: #2a2a2a;
+    --color-overlay: rgba(229, 226, 225, 0.055);
+    --color-selected: rgba(195, 244, 0, 0.1);
+    --color-accent: #c3f400;
+    --color-accent-active: #abd600;
     --color-text-primary: #ffffff;
-    --color-text-secondary: rgba(255, 255, 255, 0.6);
-    --color-text-tertiary: rgba(255, 255, 255, 0.4);
-    --color-text-muted: #a0a2a1;
-    --color-on-accent: #191919;
-    --color-border: rgba(255, 255, 255, 0.1);
-    --color-border-strong: rgba(255, 255, 255, 0.2);
-    --color-border-accent: #1ae784;
-    --color-live: #e7000b;
-    --color-error: #ef4444;
+    --color-text-secondary: #c4c9ac;
+    --color-text-tertiary: #8e9379;
+    --color-text-muted: #9d9b99;
+    --color-on-accent: #161e00;
+    --color-border: #353a2b;
+    --color-border-strong: #596044;
+    --color-border-accent: #c3f400;
+    --color-live: #ff3b30;
+    --color-error: #ffb4ab;
     --color-warning: #ffe14a;
     --color-blue: #00d5ff;
     --color-violet: #ff4fd8;
-    --font-primary: "DM Sans", Arial, sans-serif;
-    --font-mono: "JetBrains Mono", Consolas, monospace;
+    --font-primary: sans-serif;
+    --font-mono: monospace;
     --space-1: 4px;
     --space-2: 8px;
     --space-3: 10px;
@@ -30,10 +30,10 @@
     --space-7: 32px;
     --space-8: 40px;
     --radius-xs: 4px;
-    --radius-sm: 6px;
-    --radius-md: 8px;
+    --radius-sm: 4px;
+    --radius-md: 6px;
     --radius-lg: 8px;
-    --shadow-glow-sm: 0 0 18px rgba(26, 231, 132, 0.22);
+    --shadow-glow-sm: 0 0 18px rgba(195, 244, 0, 0.2);
     --shadow-modal: 0 24px 80px rgba(0, 0, 0, 0.45);
     --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
     --topbar-height: 60px;
@@ -45,6 +45,8 @@
 
 html,
 body {
+    --font-primary: var(--font-interface), sans-serif;
+    --font-mono: var(--font-technical), monospace;
     min-height: 100%;
     margin: 0;
     background: var(--color-bg-base);
@@ -61,4 +63,14 @@ select {
 
 button {
     cursor: pointer;
+}
+
+::selection {
+    background: var(--color-accent);
+    color: var(--color-on-accent);
+}
+
+:focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 3px;
 }

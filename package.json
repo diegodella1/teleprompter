@@ -15,6 +15,7 @@
         "smoke:playback": "node scripts/smoke-playback.mjs",
         "smoke:views": "node scripts/smoke-views.mjs",
         "check:rich-selection": "node scripts/check-rich-selection.mjs",
+        "check:snapshot-sync": "node --no-warnings --experimental-strip-types scripts/check-snapshot-sync.mjs",
         "start": "next start",
         "lint": "eslint --max-warnings=0 src --ext .ts,.tsx",
         "typecheck": "next typegen && tsc --noEmit"

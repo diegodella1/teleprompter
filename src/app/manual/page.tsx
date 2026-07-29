@@ -5,8 +5,8 @@ import { ArrowLeft, Eye, FileText, Gauge, Radio, ShieldCheck, Signal, Users } fr
 import "./manual.css";
 
 export const metadata: Metadata = {
-    title: "Operation Manual | Teleprompter",
-    description: "Role-based operation manual for the collaborative web teleprompter"
+    title: "Operation Manual | TelePRO",
+    description: "Role-based operation manual for TelePRO collaborative prompting"
 };
 
 type ManualSection = {
@@ -252,10 +252,10 @@ export default function ManualPage() {
         <main className="manual-shell">
             <header className="manual-hero">
                 <Link className="back-link" href="/">
-                    <ArrowLeft size={18} /> Back to teleprompter
+                    <ArrowLeft size={18} /> Back to TelePRO
                 </Link>
                 <div>
-                    <span className="eyebrow">TELEPROMPTER</span>
+                    <span className="eyebrow">TELEPRO / FIELD MANUAL</span>
                     <h1>Operation Manual</h1>
                     <p>Role-based operating procedures for remote production over WAN. Use this page to brief Producers, Hosts, and Viewers before a live session.</p>
                 </div>
