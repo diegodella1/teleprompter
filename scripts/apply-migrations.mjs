@@ -23,9 +23,7 @@ const migrations = readdirSync(migrationsDir)
 
 const client = new Client({
     connectionString: databaseUrl,
-    ssl: {
-        rejectUnauthorized: false
-    }
+    ssl: requiresSsl(databaseUrl) ? { rejectUnauthorized: false } : false
 });
 
 try {
@@ -59,4 +57,10 @@ try {
     process.exitCode = 1;
 } finally {
     await client.end().catch(() => undefined);
+}
+
+function requiresSsl(connectionString) {
+    const hostname = new URL(connectionString).hostname;
+
+    return hostname !== "127.0.0.1" && hostname !== "localhost" && hostname !== "::1";
 }

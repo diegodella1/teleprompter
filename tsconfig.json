@@ -37,7 +37,6 @@
   "exclude": [
     "node_modules",
     ".next",
-    ".open-next",
-    "roxomtv-standards"
+    ".open-next"
   ]
 }

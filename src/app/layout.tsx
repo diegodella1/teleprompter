@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-    title: "Roxom.TV Teleprompter",
-    description: "Standalone WAN teleprompter for Roxom.TV remote production"
+    title: "Teleprompter",
+    description: "Collaborative web teleprompter for remote live production"
 };
 
 type RootLayoutProps = Readonly<{

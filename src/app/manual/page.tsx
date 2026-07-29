@@ -5,8 +5,8 @@ import { ArrowLeft, Eye, FileText, Gauge, Radio, ShieldCheck, Signal, Users } fr
 import "./manual.css";
 
 export const metadata: Metadata = {
-    title: "Operation Manual | Roxom.TV Teleprompter",
-    description: "Role-based operation manual for the Roxom.TV web teleprompter"
+    title: "Operation Manual | Teleprompter",
+    description: "Role-based operation manual for the collaborative web teleprompter"
 };
 
 type ManualSection = {
@@ -245,7 +245,7 @@ Good morning. Bitcoin is holding key levels into the US session.
 Joining us now is the desk for the market structure read.
 
 ### Wrap
-That is the latest from the Roxom.TV live desk.`;
+That is the latest from the live desk.`;
 
 export default function ManualPage() {
     return (
@@ -255,7 +255,7 @@ export default function ManualPage() {
                     <ArrowLeft size={18} /> Back to teleprompter
                 </Link>
                 <div>
-                    <span className="eyebrow">ROXOM.TV TELEPROMPTER</span>
+                    <span className="eyebrow">TELEPROMPTER</span>
                     <h1>Operation Manual</h1>
                     <p>Role-based operating procedures for remote production over WAN. Use this page to brief Producers, Hosts, and Viewers before a live session.</p>
                 </div>

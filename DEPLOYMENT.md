@@ -79,6 +79,46 @@ npm run deploy
 The deploy script runs `opennextjs-cloudflare deploy --keep-vars` so dashboard-managed
 Cloudflare environment variables are preserved.
 
+## Current production: local systemd + Cloudflare Tunnel
+
+Production runs on this host as `teleprompter.service`, listening only through the existing
+Cloudflare Tunnel ingress:
+
+- Local origin: `http://127.0.0.1:3458`
+- Public URL: `https://teleprompter.diegodella.ar`
+- Unit source: `deploy/teleprompter.service`
+
+Apply additive migrations to the local Supabase container without exporting its database
+password:
+
+```bash
+npm run db:migrate:local
+```
+
+Deploy and run the quality gates:
+
+```bash
+bash scripts/deploy_local_tunnel.sh
+```
+
+Health and logs:
+
+```bash
+systemctl is-active teleprompter.service
+journalctl -u teleprompter.service -n 100 --no-pager
+curl --fail https://teleprompter.diegodella.ar/
+```
+
+Rollback to a known-good revision:
+
+```bash
+git switch <known-good-branch>
+git checkout <known-good-commit>
+bash scripts/deploy_local_tunnel.sh
+```
+
+The database schema is additive. Do not roll back database migrations by dropping tables.
+
 In CI or any non-interactive shell, Wrangler also requires:
 
 ```bash
