@@ -1,0 +1,9 @@
+---
+description: Teleprompter engineering standards
+globs:
+  - "**/*"
+alwaysApply: true
+---
+
+Follow `AGENTS.md` at the repository root for product architecture, code quality, security,
+realtime synchronization, deployment, and Git conventions.

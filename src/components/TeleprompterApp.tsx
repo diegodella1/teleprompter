@@ -77,7 +77,7 @@ const roleDescriptions: Record<Role, string> = {
 };
 
 export function TeleprompterApp({ fixedRole, initialRoomCode = "", inviteToken }: TeleprompterAppProps) {
-    const [roomName, setRoomName] = useState("Roxom.TV Live Desk");
+    const [roomName, setRoomName] = useState("Live Production");
     const [producerPin, setProducerPin] = useState("");
     const [hostPin, setHostPin] = useState("");
     const [viewerPin, setViewerPin] = useState("");
@@ -330,7 +330,7 @@ export function TeleprompterApp({ fixedRole, initialRoomCode = "", inviteToken }
                     <section className="entry invite-entry">
                         <header className="entry-header">
                             <div className="brand">
-                                <span>ROXOM.TV</span>
+                                <span>TELEPROMPTER</span>
                                 <h1>{roleInviteTitle(fixedRole)}</h1>
                                 <p>{roleInviteDescription(fixedRole)}</p>
                             </div>
@@ -376,7 +376,7 @@ export function TeleprompterApp({ fixedRole, initialRoomCode = "", inviteToken }
                 <section className="entry">
                     <header className="entry-header">
                         <div className="brand">
-                            <span>ROXOM.TV</span>
+                            <span>TELEPROMPTER</span>
                             <h1>Teleprompter</h1>
                             <p>Create or join a remote prompting room for live production over WAN.</p>
                         </div>

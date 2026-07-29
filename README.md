@@ -1,39 +1,47 @@
-# Roxom.TV Teleprompter
+# Teleprompter
 
-Teleprompter colaborativo para vivo con tres roles:
+Teleprompter colaborativo para producciones en vivo, accesible desde cualquier navegador.
 
-- Producer: carga y edita el guion, ajusta configuración y manda señales.
-- Host: controla lectura, Play/Pause y scroll maestro.
-- Viewer: sigue el guion en modo solo lectura.
+Producción: [teleprompter.diegodella.ar](https://teleprompter.diegodella.ar)
+
+## Roles
+
+- **Producer:** crea la sala, carga y edita el guion, ajusta configuración y envía señales.
+- **Host:** controla Play/Pause, velocidad y scroll maestro.
+- **Viewer:** sigue el guion sincronizado en modo solo lectura.
+
+## Funcionalidades
+
+- Salas protegidas con PIN independiente por rol.
+- Invitaciones seguras para Producer, Host y Viewer.
+- Guiones por bloques con formato enriquecido.
+- Scroll sincronizado y estado persistente para reconexiones.
+- Señales en vivo como `STANDBY`, `GO`, `30s`, `60s` y `WRAP`.
+- Manual operativo integrado en `/manual`.
 
 ## Stack
 
-- Next.js 15
-- React 19
-- Supabase Hosted
-- OpenNext + Wrangler para Cloudflare Workers
+- Next.js 15 y React 19.
+- TypeScript estricto.
+- Supabase Postgres y Realtime Broadcast.
+- systemd y Cloudflare Tunnel en producción.
+- OpenNext y Wrangler como alternativa para Cloudflare Workers.
 
-## Local Setup
+## Desarrollo local
 
 ```bash
-npm install
+npm ci
 cp .env.example .env.local
 npm run env:check
 npm run db:migrate
 npm run dev
 ```
 
-En Windows PowerShell, si no tenés `cp`:
+La aplicación queda disponible en `http://localhost:3000`.
 
-```powershell
-Copy-Item .env.example .env.local
-```
+## Variables de entorno
 
-## Environment
-
-`.env.local` no se commitea. Usá `.env.example` como plantilla.
-
-Variables requeridas:
+`.env.local` está ignorado por Git. Usá `.env.example` como plantilla.
 
 - `NEXT_PUBLIC_SUPABASE_URL`
 - `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` o `NEXT_PUBLIC_SUPABASE_ANON_KEY`
@@ -41,29 +49,33 @@ Variables requeridas:
 - `SUPABASE_DATABASE_URL`
 - `TELEPROMPTER_TOKEN_SECRET`
 
-El service role key y `SUPABASE_DATABASE_URL` son secretos de servidor. No los expongas en cliente.
+Las claves de servidor, URL de base de datos y secreto de tokens nunca deben llegar al cliente.
 
-## Scripts
+## Verificación
 
 ```bash
-npm run dev
+npm run env:check
 npm run lint
 npm run typecheck
 npm run build
-npm run env:check
-npm run db:migrate
-npm run smoke:playback
-npm run smoke:views
+npm run check:rich-selection
+SMOKE_BASE_URL=http://localhost:3000 npm run smoke:playback
+SMOKE_BASE_URL=http://localhost:3000 npm run smoke:views
 ```
 
-Para correr smoke tests contra otro puerto:
+## Producción
 
-```powershell
-$env:SMOKE_BASE_URL="http://localhost:3000"; npm run smoke:playback
+El host actual ejecuta `teleprompter.service` en `127.0.0.1:3458` y publica HTTPS mediante
+Cloudflare Tunnel.
+
+```bash
+bash scripts/deploy_local_tunnel.sh
 ```
 
-## Deployment
+Migraciones contra el Supabase local:
 
-Ver [DEPLOYMENT.md](./DEPLOYMENT.md) para Supabase, Vercel y Cloudflare/OpenNext.
+```bash
+npm run db:migrate:local
+```
 
-Antes de producción, rotar cualquier secreto compartido en chats o entornos locales.
+Operación, rollback y alternativa Cloudflare Workers: [DEPLOYMENT.md](./DEPLOYMENT.md).

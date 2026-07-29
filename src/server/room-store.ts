@@ -63,7 +63,7 @@ type PresenceRow = {
     joined_at: string;
 };
 
-const defaultScript = `**ROXOM.TV MARKET UPDATE**
+const defaultScript = `**MARKET UPDATE**
 
 [STANDBY]
 

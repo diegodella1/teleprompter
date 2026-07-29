@@ -1,3 +1,2 @@
 # Legacy Cursor config. Modern Cursor uses .cursor/rules/*.mdc instead.
-# Roxom.TV standards are in AGENTS.md at the repo root — read and follow it.
-# See AGENTS.md for full stack, conventions, and deploy rules.
+# Teleprompter standards are in AGENTS.md at the repo root.
