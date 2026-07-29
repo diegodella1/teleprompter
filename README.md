@@ -1,6 +1,6 @@
-# Teleprompter
+# TelePRO
 
-Teleprompter colaborativo para producciones en vivo, accesible desde cualquier navegador.
+Teleprompter colaborativo con estética de control broadcast para producciones en vivo, accesible desde cualquier navegador.
 
 Producción: [teleprompter.diegodella.ar](https://teleprompter.diegodella.ar)
 

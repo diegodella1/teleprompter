@@ -4,6 +4,7 @@ import React, { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import Link from "next/link";
 import { ArrowDown, ArrowUp, BookOpen, Check, Copy, Expand, FileUp, Link2, LogIn, Palette, Pause, Play, Plus, Radio, RotateCcw, Send, Settings, SkipBack, SkipForward, Square, Trash2, Users } from "lucide-react";
 import { createBlocksFromImportedHtml, createBlocksFromImportedText, createId, createRichTextContent, importScriptFile } from "@/lib/script-import";
+import { mergeRoomSnapshot } from "@/lib/snapshot-sync";
 import { createBrowserSupabaseClient } from "@/lib/supabase-browser";
 import type { ApiResult, JoinedRoom, MasterPatch, RichTextColorToken, RichTextSpan, Role, RoomConfig, RoomSnapshot, ScriptBlock, ScriptDocument, SignalType } from "@/types/teleprompter";
 import "./teleprompter.css";
@@ -122,7 +123,7 @@ export function TeleprompterApp({ fixedRole, initialRoomCode = "", inviteToken }
     }, [fixedRole, initialRoomCode]);
 
     const updateSnapshot = useCallback((snapshot: RoomSnapshot) => {
-        setSession((current) => (current ? { ...current, snapshot } : current));
+        setSession((current) => (current ? { ...current, snapshot: mergeRoomSnapshot(current.snapshot, snapshot) } : current));
     }, []);
 
     const publishLocalSync = useCallback((snapshot: RoomSnapshot) => {
@@ -139,6 +140,10 @@ export function TeleprompterApp({ fixedRole, initialRoomCode = "", inviteToken }
 
     useEffect(() => {
         if (!activeRoomCode) {
+            return;
+        }
+
+        if (!("BroadcastChannel" in window)) {
             return;
         }
 
@@ -233,14 +238,14 @@ export function TeleprompterApp({ fixedRole, initialRoomCode = "", inviteToken }
             return;
         }
 
-            setSession({
-                token: createdRoom.token,
-                role: "producer",
-                clientId: createdRoom.clientId,
-                realtimeTopic: createdRoom.realtimeTopic,
-                snapshot: createdRoom.snapshot,
-                inviteTokens: createdRoom.inviteTokens
-            });
+        setSession({
+            token: createdRoom.token,
+            role: "producer",
+            clientId: createdRoom.clientId,
+            realtimeTopic: createdRoom.realtimeTopic,
+            snapshot: createdRoom.snapshot,
+            inviteTokens: createdRoom.inviteTokens
+        });
         setCreatedRoom(null);
     }, [createdRoom]);
 
@@ -328,16 +333,19 @@ export function TeleprompterApp({ fixedRole, initialRoomCode = "", inviteToken }
             return (
                 <main className="shell">
                     <section className="entry invite-entry">
-                        <header className="entry-header">
-                            <div className="brand">
-                                <span>TELEPROMPTER</span>
-                                <h1>{roleInviteTitle(fixedRole)}</h1>
-                                <p>{roleInviteDescription(fixedRole)}</p>
-                            </div>
+                        <header className="entry-nav">
+                            <strong className="product-mark">TelePRO</strong>
                             <Link className="manual-link" href="/manual">
                                 <BookOpen size={18} /> Operation manual
                             </Link>
                         </header>
+                        <div className="entry-header">
+                            <div className="brand">
+                                <span>SECURE ROLE INVITE</span>
+                                <h1>{roleInviteTitle(fixedRole)}</h1>
+                                <p>{roleInviteDescription(fixedRole)}</p>
+                            </div>
+                        </div>
                         <form
                             className="panel join-panel invite-panel"
                             onSubmit={(event) => {
@@ -374,16 +382,43 @@ export function TeleprompterApp({ fixedRole, initialRoomCode = "", inviteToken }
         return (
             <main className="shell">
                 <section className="entry">
-                    <header className="entry-header">
-                        <div className="brand">
-                            <span>TELEPROMPTER</span>
-                            <h1>Teleprompter</h1>
-                            <p>Create or join a remote prompting room for live production over WAN.</p>
+                    <header className="entry-nav">
+                        <strong className="product-mark">TelePRO</strong>
+                        <div className="entry-nav-actions">
+                            <span className="system-ready">
+                                <i /> System ready
+                            </span>
+                            <Link className="manual-link" href="/manual">
+                                <BookOpen size={18} /> Operation manual
+                            </Link>
                         </div>
-                        <Link className="manual-link" href="/manual">
-                            <BookOpen size={18} /> Operation manual
-                        </Link>
                     </header>
+                    <div className="entry-hero">
+                        <div className="brand">
+                            <span>REMOTE BROADCAST CONTROL</span>
+                            <h1>Stay on script.<br />Run the room.</h1>
+                            <p>One shared script and one controlled pace for Producers, Hosts, and every Viewer screen—wherever the crew connects.</p>
+                        </div>
+                        <div className="entry-monitor" aria-hidden="true">
+                            <div className="monitor-meta">
+                                <span><i /> Live preview</span>
+                                <span>SYNC / 100–250 MS</span>
+                            </div>
+                            <p><strong>YOUR SCRIPT.</strong><br />ONE SHARED PACE.</p>
+                            <div className="monitor-guide" />
+                            <div className="monitor-footer">
+                                <span>PRODUCER → HOST → VIEWER</span>
+                                <strong>READY</strong>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="entry-section-heading">
+                        <div>
+                            <span>ROOM ACCESS</span>
+                            <h2>Start the production</h2>
+                        </div>
+                        <p>Join an active room or create a new one with separate access for each role.</p>
+                    </div>
                     <div className="entry-switch" aria-label="Choose entry flow">
                         <button type="button" className={entryPanel === "join" ? "active" : ""} onClick={() => setEntryPanel("join")}>
                             <LogIn size={18} /> Join
@@ -401,9 +436,9 @@ export function TeleprompterApp({ fixedRole, initialRoomCode = "", inviteToken }
                             }}
                         >
                             <div className="panel-title">
-                                <span>Default path</span>
+                                <span>EXISTING ROOM</span>
                                 <h2>Join a room</h2>
-                                <p>Use the room code and role PIN shared by the Producer.</p>
+                                <p>Enter the room code and credentials shared by the Producer.</p>
                             </div>
                             <label>
                                 Room code
@@ -444,9 +479,9 @@ export function TeleprompterApp({ fixedRole, initialRoomCode = "", inviteToken }
                             }}
                         >
                             <div className="panel-title">
-                                <span>Producer setup</span>
-                                <h2>Create production room</h2>
-                                <p>Set access for each role before sharing links with the team.</p>
+                                <span>NEW PRODUCTION</span>
+                                <h2>Create a room</h2>
+                                <p>Name the room and protect each operational role with its own PIN.</p>
                             </div>
                             <label>
                                 Room name
@@ -474,6 +509,26 @@ export function TeleprompterApp({ fixedRole, initialRoomCode = "", inviteToken }
                         </form>
                     </div>
                     {error ? <p className="error">{error}</p> : null}
+                    <section className="capability-grid" aria-label="Core capabilities">
+                        <article>
+                            <Radio size={24} />
+                            <span>01 / CONTROL</span>
+                            <h3>One active Host</h3>
+                            <p>Playback ownership stays explicit, preventing competing scroll commands during a live read.</p>
+                        </article>
+                        <article>
+                            <Users size={24} />
+                            <span>02 / COLLABORATE</span>
+                            <h3>Producer-led updates</h3>
+                            <p>Edit blocks and send cues while connected Host and Viewer displays stay synchronized.</p>
+                        </article>
+                        <article>
+                            <Expand size={24} />
+                            <span>03 / DISPLAY</span>
+                            <h3>Built for every screen</h3>
+                            <p>Large-format prompting, mirror mode, and shared scroll ratio adapt across devices.</p>
+                        </article>
+                    </section>
                 </section>
             </main>
         );
@@ -501,6 +556,7 @@ function Topbar({ session, onLeave }: { session: Session; onLeave: () => void })
     return (
         <header className="topbar">
             <div className="topbar-room">
+                <span className="product-mark compact-mark">TelePRO</span>
                 <strong>{session.snapshot.name}</strong>
                 <button className="room-code-button" onClick={() => void copyToClipboard("room", session.snapshot.code, setCopied)}>
                     {copied === "room" ? <Check size={16} /> : <Copy size={16} />}
